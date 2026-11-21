@@ -109,6 +109,8 @@ def main() -> int:
     ap.add_argument("--max-passages", type=int, default=200)
     ap.add_argument("--output", default=None,
                     help="結果JSONの保存先（既定: data/poc/embedding_search_results.json）")
+    ap.add_argument("--query", action="append", default=None,
+                    help="検索文を追加（複数指定可）。既定のサンプルクエリに追加される")
     ap.add_argument("--dtype", default="fp32", choices=["bf16", "fp32"],
                     help="モデル読込 dtype（既定 fp32: 本CPU実測で bf16 より約6倍速。bf16 は --dtype bf16 で比較可）")
     args = ap.parse_args()
@@ -174,9 +176,10 @@ def main() -> int:
     results["encode_docs_seconds"] = round(doc_time, 2)
 
     # --- クエリ側 Embedding（モデル推奨の query 形式）と検索 ---
+    queries = SAMPLE_QUERIES + (args.query or [])
     t0 = time.perf_counter()
     query_vecs = model.encode(
-        SAMPLE_QUERIES, batch_size=8, normalize_embeddings=True,
+        queries, batch_size=8, normalize_embeddings=True,
         convert_to_numpy=True, show_progress_bar=False,
         prompt_name="query" if "query" in prompts else None)
     query_time = time.perf_counter() - t0
@@ -184,7 +187,7 @@ def main() -> int:
     results["encode_queries_seconds"] = round(query_time, 2)
 
     sims = query_vecs @ doc_vecs.T  # 正規化済みなので内積 = cosine
-    for qi, q in enumerate(SAMPLE_QUERIES):
+    for qi, q in enumerate(queries):
         order = sims[qi].argsort()[::-1][:5]
         hits = [{"rank": r + 1, "id": doc_ids[i], "score": round(float(sims[qi][i]), 4),
                  "text": docs[i]} for r, i in enumerate(order)]
