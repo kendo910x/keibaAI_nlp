@@ -1,0 +1,8 @@
+# 仮想環境・モデルWeight・収集データ・一時ログは Git 管理しない
+.venv*/
+venv/
+__pycache__/
+*.pyc
+data/
+*.log
+.cache/
