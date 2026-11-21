@@ -1,0 +1,6 @@
+# Yahoo! JAPAN 検索 MCP ローカル起動用（Python 3.14 / Windows x64 で検証）
+# requests / beautifulsoup4 は元実装の pin と同一。mcp も本番(K8s)と同じ 1.30.0 に固定
+# （2.x では FastMCP が MCPServer へ改名され元実装が動かないため、変更最小化の判断）。
+requests==2.34.2
+beautifulsoup4==4.15.0
+mcp==1.30.0
