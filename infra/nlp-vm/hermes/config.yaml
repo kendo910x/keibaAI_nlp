@@ -64,7 +64,7 @@ mcp_servers:
   shared:
     url: http://192.168.0.11:30081/mcp
     tools:
-      include: [fetch_page]
+      include: [fetch_page, yahoo_search]
       resources: false
       prompts: false
     sampling: {enabled: false}
