@@ -127,7 +127,8 @@ def save_horse(horse_id: UUID, horse_name: str | None = None, birth_year: int | 
 def find_races(race_id: UUID | None = None, domain_id: str | None = None, race_key: str | None = None,
                race_name: str | None = None, race_date: date | None = None,
                limit: Limit = 20, offset: Offset = 0) -> dict:
-    """Find race candidates using the known fields. Name is a literal substring; dates are optional."""
+    """Find race candidates using the known fields. Name is a literal substring; dates are optional.
+    race_key format: YYYYMMDD/<venue code>/<race number>, e.g. 20250420/06/11. domain_id is "JRA" or "NAR"."""
     terms, args = filtered([("race_id=%s", race_id), ("domain_id=%s", domain_id), ("race_key=%s", race_key),
                             ("strpos(race_name,%s)>0", race_name), ("race_date=%s", race_date)])
     with transaction() as conn:
@@ -137,7 +138,13 @@ def find_races(race_id: UUID | None = None, domain_id: str | None = None, race_k
 @mcp.tool()
 def save_race(race_id: UUID, race_name: str | None = None, race_date: date | None = None,
               domain_id: str | None = None, race_key: str | None = None, create: bool = False) -> dict:
-    """Complete a known race or explicitly create using a stable UUID. Reuse a confirmed domain/key pair."""
+    """Complete a known race or explicitly create using a stable UUID. Reuse a confirmed domain/key pair.
+    race_key format: YYYYMMDD/<venue code>/<race number> (schema CHECK ^[0-9]{8}/[0-9]{2}/[0-9]{2}$).
+    domain_id convention: "JRA" or "NAR". UNIQUE(domain_id, race_key).
+    Example: 皐月賞 on 2025-04-20, Nakayama race 11 -> domain_id="JRA", race_key="20250420/06/11".
+    JRA venue codes: 01 札幌 / 02 函館 / 03 福島 / 04 新潟 / 05 東京 / 06 中山 / 07 中京 / 08 京都 / 09 阪神 / 10 小倉.
+    NAR venue codes: 30 門別 / 31 北見 / 32 岩見沢 / 33 帯広 / 34 旭川 / 35 盛岡 / 36 水沢 / 37 上山 / 38 三条 / 39 足利 / 40 宇都宮 / 41 高崎 / 42 浦和 / 43 船橋 / 44 大井 / 45 川崎 / 46 金沢 / 47 笠松 / 48 名古屋 / 49 紀三井寺 / 50 園田 / 51 姫路 / 52 益田 / 53 福山 / 54 高知 / 55 佐賀 / 56 荒尾 / 57 中津 / 58 札幌(NAR) / 59 函館(NAR) / 60 新潟(NAR) / 61 中京(NAR).
+    """
     fields = dict(race_name=race_name, race_date=race_date, domain_id=domain_id, race_key=race_key)
     with transaction() as conn:
         if create:

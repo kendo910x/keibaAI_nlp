@@ -86,6 +86,8 @@ async def main():
                                                                    {"quote": "🌿", "horse_id": ALT}])
         assert not (await call("get_article", article_id=aid))["targets"]["items"]
         await call("save_targets", "does not belong", article_id=aid, targets=[{"unit_id": revised["full_unit_id"]}])
+        await call("save_targets", "Both race_id and race_label were given. Keep only one of them.",
+                   article_id=aid, targets=[{"race_id": R1, "race_label": "架空"}])
         saved = (await call("save_targets", article_id=aid, targets=[
             {"unit_id": full, "horse_id": H1, "race_id": R1, "phase": "pre"},
             {"start_char": 2, "end_char": 3, "horse_id": H2, "race_id": R2, "phase": "post"},

@@ -89,7 +89,7 @@ def save_targets(article_id: UUID, targets: list[Target]) -> dict:
                 if getattr(target, label) is not None and key not in target.model_fields_set:
                     values[key] = None
                 if values[key] is not None and values[label] is not None:
-                    raise ValueError(f"Specify either {key} or {label}")
+                    raise ValueError(f"Both {key} and {label} were given. Keep only one of them.")
             values.update(unit_id=unit, phase=target.phase, target_id=target.target_id)
             if current:
                 sql = """UPDATE unit_targets SET horse_id=%(horse_id)s,horse_label=%(horse_label)s,
