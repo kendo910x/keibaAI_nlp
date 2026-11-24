@@ -1,0 +1,70 @@
+_config_version: 50
+model:
+  provider: custom
+  default: halogen-qwen3.8-flash-next
+  base_url: http://192.168.0.13:8731/v1
+  context_length: 262144
+fallback_model: []
+compression:
+  enabled: true
+  threshold: 0.50
+  threshold_tokens: 131072
+  protect_last_n: 20
+auxiliary:
+  compression: &local
+    provider: custom
+    model: halogen-qwen3.8-flash-next
+    base_url: http://192.168.0.13:8731/v1
+  vision: *local
+  approval: *local
+  skills_hub: *local
+  mcp: *local
+  review: *local
+  memory_query_rewrite: *local
+  profile_describer: *local
+  goal_judge: *local
+  curator: *local
+  monitor: *local
+  triage_specifier: *local
+  kanban_decomposer: *local
+  tts_audio_tags: *local
+  voice_chat: *local
+  moa_reference: *local
+  moa_aggregator: *local
+  title_generation:
+    <<: *local
+    model_upgrade_enabled: false
+  background_review:
+    <<: *local
+    enabled: false
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  write_approval: false
+skills:
+  write_approval: false
+terminal:
+  cwd: /opt/nlp-research
+tools:
+  tool_search:
+    enabled: "off"
+platform_toolsets:
+  cli: [skills, memory, session_search, mcp-nlpdb, mcp-shared]
+mcp_servers:
+  nlpdb:
+    command: /opt/nlp-db/venv/bin/python
+    args: [-B, /opt/nlp-db/server.py]
+    env:
+      NLP_DATABASE: keiba_nlp
+    tools:
+      include: [find_articles, get_article, save_article, find_horses, save_horse, find_races, save_race, save_targets, get_runs, save_run]
+      resources: false
+      prompts: false
+    sampling: {enabled: false}
+  shared:
+    url: http://192.168.0.11:30081/mcp
+    tools:
+      include: [fetch_page]
+      resources: false
+      prompts: false
+    sampling: {enabled: false}

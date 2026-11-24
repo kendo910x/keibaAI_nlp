@@ -1,0 +1,24 @@
+[Unit]
+Description=NLP research Hermes CLI
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/srv/nlp/hermes /srv/nlp/hermes-runtime /srv/nlp/hermes-private
+
+[Container]
+Image=localhost/nlp-hermes:0.22.2-stage3b
+Pull=never
+ContainerName=nlp-hermes
+Network=host
+Volume=/srv/nlp/hermes:/opt/data
+Volume=/srv/nlp/hermes-runtime/config.yaml:/opt/data/config.yaml:ro
+Volume=/srv/nlp/hermes-private/nlp_app:/run/secrets/nlp_app:ro
+Environment=HERMES_SKIP_CONFIG_MIGRATION=1
+PodmanArgs=--memory=3g --cpus=1.5
+Exec=sleep infinity
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
