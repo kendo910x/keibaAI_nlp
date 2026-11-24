@@ -36,7 +36,9 @@ B §2.3準拠（repo→`/srv/nlp/hermes-runtime/build/`→podman build→systemc
 
 ## 3. ランB2の実行
 
-- 実行: B同経路（tmux→`podman exec --user 10000:10000 --workdir /opt/nlp-research nlp-hermes hermes chat -Q --format stream-json --max-turns 1200 --query-file /dev/stdin`）。外側 `timeout 19800`（300分+余裕）
+**役割分担**: ランB2の実行者はVM15コンテナ内のHermesエージェント（nlp-hermes）であり、検索・取得・保存・Skill作成を含む研究タスクの判断と実行はすべてHermesの裁量である。コーディングエージェント（実施担当）の工作是起動・観察・実測・記録までであり、研究タスクを代行しない（検索結果を自分でsave_articleしない等）。
+
+- 実行: B同経路（tmux→`podman exec --user 10000:10000 --workdir /opt/nlp-research nlp-hermes hermes chat -Q --format stream-json --max-turns 1200 --query-file /dev/stdin`。タスク文は`--query-file`でHermesへverbatim転送し、コーディングエージェントが解釈・補足しない）。外側 `timeout 19800`（300分+余裕）
 - **停止操作の教訓（B §3）**: pkillパターンは実コマンドライン（`python -P -c "...main()) chat -Q..."`）に一致させる。停止確認はプロセス一覧＋ログサイズ不変の2点
 - タスク文（この文面をそのままverbatim与える。これ以上の指示を足さない）:
 
