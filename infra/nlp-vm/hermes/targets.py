@@ -62,6 +62,7 @@ def save_targets(article_id: UUID, targets: list[Target]) -> dict:
     """Atomically attach or correct 1–100 targets. Omit selector for full text or the current target's unit.
     A selector is unit_id, [start_char,end_char), or an exact quote. Ambiguous quotes return candidate ranges.
     Supply target_id to correct known IDs/labels and phase; omitted fields retain their values.
+    When both an id and a label are given for one entity, the id wins and the label is ignored.
     """
     if not 1 <= len(targets) <= 100:
         raise ValueError("Supply 1 to 100 targets per call")
@@ -89,7 +90,7 @@ def save_targets(article_id: UUID, targets: list[Target]) -> dict:
                 if getattr(target, label) is not None and key not in target.model_fields_set:
                     values[key] = None
                 if values[key] is not None and values[label] is not None:
-                    raise ValueError(f"Both {key} and {label} were given. Keep only one of them.")
+                    values[label] = None
             values.update(unit_id=unit, phase=target.phase, target_id=target.target_id)
             if current:
                 sql = """UPDATE unit_targets SET horse_id=%(horse_id)s,horse_label=%(horse_label)s,

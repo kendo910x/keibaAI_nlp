@@ -86,8 +86,6 @@ async def main():
                                                                    {"quote": "🌿", "horse_id": ALT}])
         assert not (await call("get_article", article_id=aid))["targets"]["items"]
         await call("save_targets", "does not belong", article_id=aid, targets=[{"unit_id": revised["full_unit_id"]}])
-        await call("save_targets", "Both race_id and race_label were given. Keep only one of them.",
-                   article_id=aid, targets=[{"race_id": R1, "race_label": "架空"}])
         saved = (await call("save_targets", article_id=aid, targets=[
             {"unit_id": full, "horse_id": H1, "race_id": R1, "phase": "pre"},
             {"start_char": 2, "end_char": 3, "horse_id": H2, "race_id": R2, "phase": "post"},
@@ -98,6 +96,12 @@ async def main():
         assert corrected["horse_label"] is None and corrected["horse_id"] == H1
         same = (await call("save_targets", article_id=aid, targets=[{"horse_id": H1, "race_id": R1}]))["targets"][0]
         assert same["target_id"] == saved[0]["target_id"] and same["phase"] == "pre"
+        both_race = (await call("save_targets", article_id=aid, targets=[
+            {"race_id": R1, "race_label": "架空", "phase": "post"}]))["targets"][0]
+        assert both_race["race_id"] == R1 and both_race["race_label"] is None
+        both_horse = (await call("save_targets", article_id=aid, targets=[
+            {"horse_id": H2, "horse_label": "架空", "phase": "mixed"}]))["targets"][0]
+        assert both_horse["horse_id"] == H2 and both_horse["horse_label"] is None
         assert not (await call("find_articles", horse_id=H1, race_id=R2))["items"]
         found = await call("find_articles", source_url=URL, horse_id=H1, race_id=R1, phase="pre", run_id=RUN)
         assert [r["article_id"] for r in found["items"]] == [aid]
@@ -113,7 +117,7 @@ async def main():
         assert [r["article_id"] for r in tail["versions"]["items"]] == [revised["article_id"]]
     with transaction() as conn:
         n = counts(conn)
-        assert n == dict(zip(TABLES, (3,1,2,2,4,3,0,0))), n
+        assert n == dict(zip(TABLES, (3,1,2,2,4,5,0,0))), n
         articles = {str(r["article_id"]): r for r in conn.execute("SELECT * FROM articles")}
         for ident, text in ((aid, BODY), (revised["article_id"], BODY+"。"), (missing["article_id"], None)):
             r = articles[ident]
@@ -124,7 +128,8 @@ async def main():
         assert units == {(aid,0,len(BODY)),(aid,2,3),(aid,7,9),(revised["article_id"],0,len(BODY)+1)}
         indexed = {(str(r["horse_id"]),str(r["race_id"]),r["phase"],r["start_char"],r["end_char"]) for r in
                    conn.execute("SELECT t.*,u.start_char,u.end_char FROM unit_targets t JOIN text_units u USING(unit_id)")}
-        assert indexed == {(H1,R1,"pre",0,len(BODY)),(H2,R2,"post",2,3),(H1,"None","mixed",7,9)}
+        assert indexed == {(H1,R1,"pre",0,len(BODY)),(H2,R2,"post",2,3),(H1,"None","mixed",7,9),
+                           ("None",R1,"post",0,len(BODY)),(H2,"None","mixed",0,len(BODY))}
         assert [(str(r["horse_id"]),r["normalized_name"],r["birth_year"]) for r in
                 conn.execute("SELECT * FROM horses ORDER BY horse_id")] == [(H1,"架空A",2020),(H2,"架空A",None)]
         races = conn.execute("SELECT * FROM races ORDER BY race_id").fetchall()
