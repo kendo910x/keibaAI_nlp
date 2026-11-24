@@ -1,0 +1,29 @@
+[Unit]
+Description=NLP PostgreSQL 16 with pgvector
+Wants=network-online.target
+After=network-online.target ufw.service
+RequiresMountsFor=/srv/nlp/pgdata /srv/nlp/db /srv/nlp/db-secrets
+
+[Container]
+Image=docker.io/pgvector/pgvector:0.8.7-pg16-bookworm@sha256:018b4a92e634c3a5715f613dd43497e3d8028ae051be7ba6fd127bcffb0e7957
+Pull=never
+ContainerName=nlp-postgres
+PublishPort=192.168.0.14:5432:5432/tcp
+Volume=/srv/nlp/pgdata:/var/lib/postgresql/data
+Volume=/srv/nlp/db:/etc/nlp-db:ro
+Volume=/srv/nlp/db-secrets/postgres:/run/nlp-postgres-password:ro
+Environment=POSTGRES_PASSWORD_FILE=/run/nlp-postgres-password
+Environment=POSTGRES_INITDB_ARGS=--encoding=UTF8
+Environment=TZ=UTC
+Exec=postgres -c hba_file=/etc/nlp-db/pg_hba.conf -c shared_buffers=512MB -c max_connections=50 -c timezone=UTC -c listen_addresses=* -c password_encryption=scram-sha-256 -c ssl=off
+
+[Service]
+# Reject non-LAN sources before Podman's destination NAT can route past UFW INPUT.
+ExecStartPre=/bin/sh -ec '/usr/sbin/iptables -w -t raw -C PREROUTING ! -s 192.168.0.0/24 -d 192.168.0.14/32 -p tcp --dport 5432 -m comment --comment keiba-nlp-postgres-lan -j DROP 2>/dev/null || /usr/sbin/iptables -w -t raw -I PREROUTING 1 ! -s 192.168.0.0/24 -d 192.168.0.14/32 -p tcp --dport 5432 -m comment --comment keiba-nlp-postgres-lan -j DROP'
+# Match the original endpoint as well as the forwarded port after DNAT.
+ExecStartPre=/bin/sh -ec '/usr/sbin/iptables -w -C FORWARD -i enp0s17 -o podman0 -s 192.168.0.0/24 -p tcp --dport 5432 -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdst 192.168.0.14 --ctorigdstport 5432 -m comment --comment keiba-nlp-postgres-forward -j ACCEPT 2>/dev/null || /usr/sbin/iptables -w -I FORWARD 1 -i enp0s17 -o podman0 -s 192.168.0.0/24 -p tcp --dport 5432 -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdst 192.168.0.14 --ctorigdstport 5432 -m comment --comment keiba-nlp-postgres-forward -j ACCEPT'
+Restart=on-failure
+TimeoutStartSec=150
+
+[Install]
+WantedBy=multi-user.target
