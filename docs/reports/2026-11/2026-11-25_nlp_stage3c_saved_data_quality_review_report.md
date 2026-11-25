@@ -232,7 +232,9 @@ Sの指示は全試行の「部分unitがない記事」単位、受入はB3新�
 | 設定・Skill・実行証拠 | 実際のbind mount元 `/srv/nlp/hermes-runtime/config.yaml` は両時点でSHA-256 `ef4b3242a2e99cb6afabcd0b2c24ccfadef64d24197daf87fb986301d3a98178`。稼働Skillは `0ce3913aaa01b8eeafe807ec9c546de51c58eee3b18ee35b520581eae9f70b82`。既存ダンプのサイズ・SHA、5ディレクトリ内の証拠ファイル一覧とサイズ、DBツールのビルド元ファイル指紋も一致。 |
 | 開発PC | 作業前のtracked差分・未追跡表示は0件。PoC `data/` 配下の6ファイル（81,374バイト）は個々のSHAが一致。既存の補助出力4件は元の場所に保持した。 |
 
-VMやDBの設定を変えるコマンド、DBのDML/DDL・restore、Hermesの起動・停止、save系MCP、外部記事の取得・検索、Skillの編集、Embedding生成を今回実行した件数は各0。引用位置の検算はアクセスを絞った開発PCの一時領域で行った。データベース、既存ダンプ、元ログ、Skill、PoCが証拠の正本。Gitの対象は本レポート1ファイルで、本文・ログ・ダンプ・資格情報は含まない。公表commitとリモートの一致は引き渡しに併記する。
+VMやDBの設定を変えるコマンド、DBのDML/DDL・restore、Hermesの起動・停止、save系MCP、外部記事の取得・検索、Skillの編集、Embedding生成を今回実行した件数は各0。引用位置の検算はアクセスを絞った開発PCの一時領域で行った。調査用に作った74ファイルを回収し、作業ディレクトリの消滅を確認した。元のDB・ダンプ・ログ・Skill・PoCは保全した。
+
+本レポート1ファイルをcommitしてpushし、GitHubの `refs/heads/main` が `450115b8fb992458bedf9fc2b54f41af9b78b4a7` を返すことを確認した。その時点のレポートは作業ファイル・commit・再取得した `origin/main` の3か所ともGit blob `a0241f59d12671b1683b98d715672b2cb6daffdf` だった。この公表記録を同じファイルに追記した版のSHAは引き渡しに併記する。
 
 コンテナが参照する `config.yaml`、`server.py`、`store.py` は `ff925f9c` のGit内容とバイト一致した。`targets.py` とコンテナ内の固定契約 `AGENTS.md` は、配備ファイルがCRLF、GitがLFで、改行をそろえると全文一致した。
 
