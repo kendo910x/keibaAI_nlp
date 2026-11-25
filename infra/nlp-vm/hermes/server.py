@@ -7,7 +7,7 @@ from uuid import UUID
 
 from mcp.server.fastmcp import FastMCP
 from psycopg.types.json import Jsonb
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from store import Limit, Offset, Phase, Status, compatible, filtered, page, required, transaction
 from targets import save_targets
@@ -93,6 +93,60 @@ def save_article(source_url: str, body_kind: Literal["full", "excerpt", "snippet
             row["full_unit_id"] = conn.execute("""SELECT unit_id FROM text_units
                 WHERE article_id=%s AND start_char=0 AND end_char=%s""", (row["article_id"], len(body))).fetchone()["unit_id"]
         return row
+
+
+class Slice(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    horse_id: UUID
+    start_char: int = Field(ge=0)
+    end_char: int = Field(gt=0)
+    quote: str = Field(min_length=1)
+    phase: Literal["pre", "post", "mixed"]
+
+
+@mcp.tool()
+def save_slices(article_id: UUID, slices: list[Slice]) -> dict:
+    """Save verbatim per-horse slices of one article in a single atomic call (one call per article).
+    Each quote must equal body[start_char:end_char] exactly; any mismatch rejects the whole call.
+    Horse must already exist (resolve with find_horses first); labels are not accepted.
+    Idempotent: reruns reuse existing units and targets. The full-text unit is left untouched.
+    """
+    if not 1 <= len(slices) <= 100:
+        raise ValueError("Supply 1 to 100 slices per call")
+    with transaction() as conn:
+        article = required(conn.execute("SELECT body FROM articles WHERE article_id=%s FOR UPDATE",
+                                        (article_id,)).fetchone(), "Unknown article")
+        body = article["body"]
+        if body is None:
+            raise ValueError("An article without source text has no slices")
+        created_units = reused_units = created_targets = reused_targets = 0
+        for s in slices:
+            if s.end_char > len(body):
+                raise ValueError("Slice range exceeds article body")
+            if body[s.start_char:s.end_char] != s.quote:
+                raise ValueError("quote does not match body[start_char:end_char] verbatim")
+            required(conn.execute("SELECT 1 FROM horses WHERE horse_id=%s", (s.horse_id,)).fetchone(),
+                     "Unknown horse_id. Resolve candidates with find_horses first")
+            row = conn.execute("SELECT unit_id FROM text_units WHERE article_id=%s AND start_char=%s AND end_char=%s",
+                               (article_id, s.start_char, s.end_char)).fetchone()
+            if row:
+                unit, reused_units = row["unit_id"], reused_units + 1
+            else:
+                unit = conn.execute("""INSERT INTO text_units(article_id,start_char,end_char)
+                                       VALUES (%s,%s,%s) RETURNING unit_id""",
+                                    (article_id, s.start_char, s.end_char)).fetchone()["unit_id"]
+                created_units += 1
+            existing = conn.execute("""SELECT target_id FROM unit_targets WHERE unit_id=%s AND horse_id=%s
+                                       AND race_id IS NULL AND horse_label IS NULL AND race_label IS NULL""",
+                                    (unit, s.horse_id)).fetchone()
+            if existing:
+                reused_targets += 1
+            else:
+                conn.execute("INSERT INTO unit_targets(unit_id,horse_id,phase) VALUES (%s,%s,%s)",
+                             (unit, s.horse_id, s.phase))
+                created_targets += 1
+        return {"units_created": created_units, "units_reused": reused_units,
+                "targets_created": created_targets, "targets_reused": reused_targets}
 
 
 # Match the generated normalized_name expression from migration 001 using PostgreSQL's Unicode version.

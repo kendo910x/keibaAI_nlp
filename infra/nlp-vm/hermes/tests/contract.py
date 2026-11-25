@@ -13,7 +13,7 @@ sys.path.insert(0, "/opt/nlp-db")
 from store import transaction
 
 TEST = "keiba_nlp_stage2b_test"
-TOOLS = set("find_articles get_article save_article find_horses save_horse find_races save_race save_targets get_runs save_run".split())
+TOOLS = set("find_articles get_article save_article find_horses save_horse find_races save_race save_targets save_slices get_runs save_run".split())
 TABLES = ("articles", "collection_runs", "horses", "races", "text_units", "unit_targets", "embedding_configs", "embeddings")
 RUN, H1, H2, R1, R2, ALT = (str(UUID(int=n)) for n in range(1, 7))
 URL = "https://example.invalid/fixture-a"
@@ -115,9 +115,25 @@ async def main():
         tail = await call("get_article", article_id=aid, body_start=4, unit_offset=1, target_offset=1, version_offset=1)
         assert tail["body"] == BODY[4:] and tail["next_char"] is None
         assert [r["article_id"] for r in tail["versions"]["items"]] == [revised["article_id"]]
+        # save_slices: verbatim per-horse slices. BODY="架空🌿甲と甲。余白" (len 9).
+        sl = await call("save_slices", article_id=aid, slices=[
+            {"horse_id": H1, "start_char": 0, "end_char": 2, "quote": "架空", "phase": "pre"},
+            {"horse_id": H2, "start_char": 3, "end_char": 5, "quote": "甲と", "phase": "post"}])
+        assert sl == {"units_created": 2, "units_reused": 0, "targets_created": 2, "targets_reused": 0}, sl
+        sl2 = await call("save_slices", article_id=aid, slices=[
+            {"horse_id": H1, "start_char": 0, "end_char": 2, "quote": "架空", "phase": "pre"},
+            {"horse_id": H2, "start_char": 3, "end_char": 5, "quote": "甲と", "phase": "post"}])
+        assert sl2 == {"units_created": 0, "units_reused": 2, "targets_created": 0, "targets_reused": 2}, sl2
+        await call("save_slices", "verbatim", article_id=aid, slices=[
+            {"horse_id": H1, "start_char": 0, "end_char": 2, "quote": "実構", "phase": "pre"}])
+        await call("save_slices", "Unknown horse", article_id=aid, slices=[
+            {"horse_id": ALT, "start_char": 0, "end_char": 2, "quote": "架空", "phase": "pre"}])
+        sl3 = await call("save_slices", article_id=aid, slices=[
+            {"horse_id": H1, "start_char": 0, "end_char": len(BODY), "quote": BODY, "phase": "mixed"}])
+        assert sl3 == {"units_created": 0, "units_reused": 1, "targets_created": 1, "targets_reused": 0}, sl3
     with transaction() as conn:
         n = counts(conn)
-        assert n == dict(zip(TABLES, (3,1,2,2,4,5,0,0))), n
+        assert n == dict(zip(TABLES, (3,1,2,2,6,8,0,0))), n
         articles = {str(r["article_id"]): r for r in conn.execute("SELECT * FROM articles")}
         for ident, text in ((aid, BODY), (revised["article_id"], BODY+"。"), (missing["article_id"], None)):
             r = articles[ident]
@@ -125,11 +141,12 @@ async def main():
             assert r["body_sha256"] == (hashlib.sha256(text.encode()).digest() if text else None)
         assert articles[aid]["media"] == "fixture"
         units = {(str(r["article_id"]), r["start_char"], r["end_char"]) for r in conn.execute("SELECT * FROM text_units")}
-        assert units == {(aid,0,len(BODY)),(aid,2,3),(aid,7,9),(revised["article_id"],0,len(BODY)+1)}
+        assert units == {(aid,0,len(BODY)),(aid,2,3),(aid,7,9),(aid,0,2),(aid,3,5),(revised["article_id"],0,len(BODY)+1)}
         indexed = {(str(r["horse_id"]),str(r["race_id"]),r["phase"],r["start_char"],r["end_char"]) for r in
                    conn.execute("SELECT t.*,u.start_char,u.end_char FROM unit_targets t JOIN text_units u USING(unit_id)")}
         assert indexed == {(H1,R1,"pre",0,len(BODY)),(H2,R2,"post",2,3),(H1,"None","mixed",7,9),
-                           ("None",R1,"post",0,len(BODY)),(H2,"None","mixed",0,len(BODY))}
+                           ("None",R1,"post",0,len(BODY)),(H2,"None","mixed",0,len(BODY)),
+                           (H1,"None","pre",0,2),(H2,"None","post",3,5),(H1,"None","mixed",0,len(BODY))}
         assert [(str(r["horse_id"]),r["normalized_name"],r["birth_year"]) for r in
                 conn.execute("SELECT * FROM horses ORDER BY horse_id")] == [(H1,"架空A",2020),(H2,"架空A",None)]
         races = conn.execute("SELECT * FROM races ORDER BY race_id").fetchall()
