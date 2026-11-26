@@ -165,10 +165,10 @@ def layout(tab, title, body):
         "<title>"
         + ESC(title)
         + ' | 競馬資料庫</title><link rel="stylesheet" href="/dashboard.css">'
-        '<header><div><a class="brand" href="/"><span class="mark" aria-hidden="true">馬</span>競馬資料庫</a><nav>'
+        '<header><div><a class="brand" href="/"><span class="mark" aria-hidden="true">馬</span>競馬資料庫</a>'
         + '<strong class="environment">'
         + env
-        + "</strong>"
+        + "</strong><nav>"
         + nav
         + "</nav></div></header><main><h1>"
         + ESC(title)
@@ -853,7 +853,7 @@ def detail(c, ident, back="/articles"):
             + "　"
             + anchor("#interpretation", "馬・競走別のLLM解釈")
             + "</p>"
-            '<section class="article" id="source"><h2>保存した原文</h2>'
+            '<div class="comparison"><section class="article" id="source"><h2>保存した原文</h2>'
             + badge("公開部分のみ" if v["partial"] else "本文保存", "neutral")
             + '<p class="sourcebody">'
             + ESC(v["body"])
@@ -901,7 +901,7 @@ def detail(c, ident, back="/articles"):
                     + ESC(item["text"])
                     + "</p></div>"
                 )
-        h += anchor("#source", "保存した原文へ戻る") + "</section>"
+        h += anchor("#source", "保存した原文へ戻る") + "</section></div>"
     else:
         h += panel("本文の保存状態", "URLと取得時の状態を保存。本文は未取得。")
     versions = c.execute(
