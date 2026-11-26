@@ -13,6 +13,7 @@ ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 Volume=/srv/nlp/runtime/app:/opt/keiba:ro
+Volume=/srv/nlp/runtime/database:/run/keiba/database:ro
 Volume=/srv/nlp/hermes/cron:/run/hermes-cron:ro
 Volume=/srv/nlp/hermes-private/nlp_viewer:/run/secrets/nlp_viewer:ro
 Environment=TZ=Asia/Tokyo

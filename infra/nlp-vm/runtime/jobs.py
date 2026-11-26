@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 import discovery
 from corpus import connect
 from research import ROOT, digest, interpret, interpretation_config, read
-from routes import collect
+from routes import capture_url, collect
 
 JST = ZoneInfo("Asia/Tokyo")
 TERMINAL = ("done", "partial", "failed")
@@ -100,6 +100,7 @@ def history(limit=None, year=None, source="net", media=(), media_only=False):
                     )
     definition = {
         "roster": "history-jra",
+        "roster_size": len(data["horses"]),
         "sha256": hashlib.sha256(content).hexdigest(),
         "horses": 0 if media_only else len(horses),
         "year": year,
@@ -264,6 +265,11 @@ def execute(target, p):
         r = discovery.horse_route(
             target, target.get("source", "net"), target.get("limit", 4)
         )
+    elif typ == "selected_article":
+        hit = capture_url(target["name"], target["url"], target["title"])
+        good = hit["status"] in ("ok", "partial")
+        r = {"route_status": hit["status"], "hits": [hit], "saved": int(good and not hit["known"]),
+             "known": int(hit["known"]), "failed": int(not good and hit["status"] != "metadata_only")}
     elif typ == "media":
         r = discovery.media_route(target)
         if (
@@ -361,6 +367,7 @@ def add_targets(c, p, targets):
     if not targets:
         return
     ident = p["id"]
+    c.execute("SELECT id FROM plans WHERE id=%s FOR UPDATE", (ident,))
     pos = c.execute(
         "SELECT coalesce(max(position),-1)+1 n FROM work_items WHERE plan_id=%s",
         (ident,),
@@ -373,7 +380,7 @@ def add_targets(c, p, targets):
         )
     }
     for target in targets:
-        if target["type"] == "horse":
+        if target["type"] == "horse" and not target.get("decision"):
             budget = p["input"].get("name_budget")
             if target["name"] in names or (budget is not None and len(names) >= budget):
                 continue
@@ -481,10 +488,13 @@ def run(ident, steps=None, respect_stop=False):
                     if counts["bad"] and not counts["ok"] and not counts["partial"]
                     else ("partial" if counts["bad"] or counts["partial"] else "done")
                 )
-                c.execute(
-                    "UPDATE plans SET state=%s,ended_at=now(),updated_at=now() WHERE id=%s",
+                finished = c.execute(
+                    """UPDATE plans SET state=%s,ended_at=now(),updated_at=now() WHERE id=%s
+                    AND NOT EXISTS(SELECT FROM work_items WHERE plan_id=plans.id AND state IN ('queued','working'))""",
                     (state, ident),
                 )
+                if not finished.rowcount:
+                    continue
                 break
             if stop or steps is not None and n >= steps:
                 c.execute(
@@ -493,7 +503,7 @@ def run(ident, steps=None, respect_stop=False):
                 )
                 break
             if (
-                p["kind"] in ("history", "interpret")
+                p["kind"] in ("history", "interpret") and p["scope"] != "finite"
                 and c.execute(
                     """SELECT 1 FROM plans d WHERE kind='daily' AND state='running' AND EXISTS
                     (SELECT FROM pg_locks l WHERE l.locktype='advisory' AND l.objid=(hashtextextended(d.id::text,0)&4294967295)::oid) LIMIT 1"""

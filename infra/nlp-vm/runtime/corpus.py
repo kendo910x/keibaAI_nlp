@@ -11,15 +11,12 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+from profile_db import credentials
 
 
 def connect(reader=False):
-    role = "nlp_viewer" if reader else "nlp_app"
     return psycopg.connect(
-        host="192.168.0.14",
-        dbname="keiba_nlp",
-        user=role,
-        password=(Path("/run/secrets") / role).read_text().strip(),
+        **credentials(reader),
         connect_timeout=6,
         row_factory=dict_row,
         application_name="keiba-reading" if reader else "keiba-collection",
@@ -118,6 +115,8 @@ def record(family, rec):
 
 
 def import_directory(root, origin):
+    if root.resolve() != Path("/var/lib/keiba"):
+        raise ValueError("Recovery reads only the mounted data directory of this profile")
     counts = {}
     with connect() as c:
         for family in (

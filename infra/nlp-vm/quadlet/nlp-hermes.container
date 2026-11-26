@@ -15,11 +15,13 @@ Volume=/srv/nlp/hermes-private/nlp_app:/run/secrets/nlp_app:ro
 Volume=/srv/nlp/runtime/app:/opt/keiba:ro
 Volume=/srv/nlp/runtime/data:/var/lib/keiba
 Volume=/srv/nlp/runtime/work:/opt/nlp-research:ro
-Volume=/srv/nlp/runtime/research/keiba-routes-20261126:/var/tmp/keiba-routes-20261126
-Volume=/srv/nlp/runtime/research/keiba-search-20261126:/var/tmp/keiba-search-20261126
+Volume=/srv/nlp/runtime/database:/run/keiba/database:ro
+Volume=/srv/nlp/runtime/app/store.py:/opt/nlp-db/store.py:ro
+Volume=/srv/nlp/runtime/app/profile_db.py:/opt/nlp-db/profile_db.py:ro
 Environment=HERMES_SKIP_CONFIG_MIGRATION=1
 Environment=TZ=Asia/Tokyo
 Environment=KEIBA_RESEARCH_DIR=/var/lib/keiba
+Environment=KEIBA_BROWSER_EXECUTABLE=/usr/bin/chromium
 Environment=KEIBA_RUNTIME_DB=1
 Environment=KEIBA_RESEARCH_ACTOR=hermes
 Environment=KEIBA_INTERPRET_SKILL=/opt/data/skills/keiba-interpret/SKILL.md

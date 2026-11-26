@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 from corpus import connect
+from profile_db import PROFILES, database, trial
 
 JST = ZoneInfo("Asia/Tokyo")
 SITES = {
@@ -910,4 +911,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("192.168.0.14", 8786), Handler).serve_forever()
+    ThreadingHTTPServer(("192.168.0.14", PROFILES[database()][2]), Handler).serve_forever()

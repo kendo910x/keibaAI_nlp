@@ -21,7 +21,9 @@ SHARED = "http://192.168.0.11:30081/mcp"
 LLM = "http://192.168.0.13:8731/v1/chat/completions"
 MODEL = "halogen-qwen3.8-flash-next"
 ROOT = Path(os.environ["KEIBA_RESEARCH_DIR"]).resolve()
-SERVER = os.environ.get("KEIBA_RUNTIME_DB") == "1" and ROOT == Path("/var/lib/keiba")
+SERVER = os.environ.get("KEIBA_RUNTIME_DB") == "1"
+if SERVER and ROOT != Path("/var/lib/keiba"):
+    raise ValueError("Server collection requires its profile's mounted data directory")
 
 
 def now():
@@ -54,7 +56,7 @@ def read(group, ident):
 
 
 def links_only(url):
-    hosts = {"keiba.sponichi.co.jp", "www.keibalab.jp"}
+    hosts = set()
     policy = ROOT / "collection-policy.json"
     if policy.is_file():
         hosts.update(json.loads(policy.read_text(encoding="utf-8"))["links_only_hosts"])

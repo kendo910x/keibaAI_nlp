@@ -1,12 +1,11 @@
 """Database connection and bounded, parameterized reads shared by the ten MCP tools."""
-import os
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Annotated, Literal
 
 import psycopg
 from psycopg.rows import dict_row
 from pydantic import Field
+from profile_db import credentials
 
 Limit = Annotated[int, Field(ge=1, le=100)]
 Offset = Annotated[int, Field(ge=0, le=2147483646)]
@@ -16,13 +15,9 @@ Status = Literal["queued", "running", "paused", "completed", "failed"]
 
 @contextmanager
 def transaction():
-    name = os.environ.get("NLP_DATABASE", "keiba_nlp")
-    if name not in {"keiba_nlp", "keiba_nlp_stage2b_test"}:
-        raise ValueError("Invalid administrator database setting")
     try:
         with psycopg.connect(
-            host="192.168.0.14", port=5432, dbname=name, user="nlp_app",
-            password=Path("/run/secrets/nlp_app").read_text().rstrip("\r\n"),
+            **credentials(),
             sslmode="disable", connect_timeout=4, row_factory=dict_row,
             application_name="nlp-hermes-mcp",
             options="-c statement_timeout=5000 -c lock_timeout=3000 -c search_path=public,pg_catalog",

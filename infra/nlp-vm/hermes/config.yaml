@@ -95,8 +95,6 @@ mcp_servers:
   nlpdb:
     command: /opt/nlp-db/venv/bin/python
     args: [-B, /opt/nlp-db/server.py]
-    env:
-      NLP_DATABASE: keiba_nlp
     tools:
       include: [find_articles, get_article, save_article, find_horses, save_horse, find_races, save_race, save_targets, save_slices, get_runs, save_run]
       resources: false

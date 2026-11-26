@@ -10,8 +10,10 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from discovery import MEDIA, card, horse_route, media_route
-from jobs import JST, daily, run, status
-from research import ROOT, capture, interpret as independent, search
+from corpus import connect
+from jobs import JST, add_targets, daily, history, run, status
+from profile_db import trial
+from research import ROOT, capture, interpret as independent, read, search
 from routes import capture_url, collect, excerpt, listing, roster_page, seeds
 from run import in_worker
 
@@ -33,9 +35,30 @@ def media_news(source: str, day: str, limit: int) -> dict:
     return media_route({"source": source, "day": day, "limit": limit})
 
 
-def daily_prepare(sources: list[str], review: bool = True) -> dict:
-    """Create the morning plan. For finite trials use review=true. Production is enabled by the operator's Cron environment."""
-    if not review:
+def trial_request():
+    return json.loads(Path("/run/keiba/trial.json").read_text())
+
+
+def history_prepare(limit: int, source: str = "net") -> dict:
+    """Open the authorized historical roster prefix. Return the real names and active years."""
+    if limit < 1 or source not in ("net", "blog"):
+        raise ValueError("Choose a positive roster size and a supported source")
+    if trial() and limit != trial_request()["history_limit"]:
+        raise ValueError("Use the designated trial roster size")
+    ident = history(limit, source=source)
+    with connect() as c:
+        rows = c.execute("SELECT target FROM work_items WHERE plan_id=%s AND target ? 'horse_id' ORDER BY position LIMIT 40", (ident,))
+        return {"plan_id": ident, "horses": [{k: r["target"][k] for k in ("name","first","last")} for r in rows]}
+
+
+def daily_prepare(sources: list[str], review: bool = False) -> dict:
+    """Open the normal daily plan in this profile. The isolated one-off uses its fixed JST date."""
+    day = datetime.now(JST).date().isoformat()
+    if trial():
+        day = trial_request()["day"]
+        if review or set(sources) != set(MEDIA):
+            raise ValueError("The daily trial uses normal expansion and all four news lists")
+    elif not review:
         jobfile = Path("/opt/data/cron/jobs.json")
         jobs = json.loads(jobfile.read_text())["jobs"] if jobfile.exists() else []
         if not any(
@@ -46,7 +69,7 @@ def daily_prepare(sources: list[str], review: bool = True) -> dict:
             )
     return status(
         daily(
-            datetime.now(JST).date().isoformat(),
+            day,
             "review" if review else "operation",
             sources,
         )
@@ -54,11 +77,53 @@ def daily_prepare(sources: list[str], review: bool = True) -> dict:
 
 
 def plan_step(plan_id: str, count: int = 1) -> dict:
-    """Process the next one to ten saved targets of an existing daily plan. Read its durable position afterwards."""
+    """Process one to ten saved targets of this historical or daily plan."""
     p = status(plan_id)
-    if p["kind"] != "daily" or not 1 <= count <= 10:
-        raise ValueError("choose a daily plan and 1..10 targets")
+    if p["kind"] not in ("history", "daily") or not 1 <= count <= 10:
+        raise ValueError("choose a collection plan and 1..10 targets")
     return run(plan_id, count)
+
+
+async def plan_search(plan_id: str, subject: str, query: str) -> dict:
+    """Search the public web for an agent-selected horse/race and record the actual query under its plan."""
+    if status(plan_id)["kind"] not in ("history", "daily"):
+        raise ValueError("Choose a collection plan")
+    result = await search(subject, query, 6)
+    with connect() as c:
+        c.execute("INSERT INTO agent_searches VALUES (%s,%s,%s,%s)", (plan_id,result["search_id"],subject,query))
+    return result
+
+
+def plan_follow(plan_id: str, subject: str, reason: str, source: str, search_id: str = "",
+                number: int = 1, year: str = "") -> dict:
+    """Queue the chosen web result (source=search, 1-based number), or another site search (net/blog) for this subject."""
+    if not subject.strip() or not reason.strip():
+        raise ValueError("Include the real horse/race and the reason for the route")
+    with connect() as c:
+        p = c.execute("SELECT * FROM plans WHERE id=%s FOR UPDATE",(plan_id,)).fetchone()
+        if not p or p["kind"] not in ("history","daily") or p["stop_requested"]:
+            raise ValueError("Choose an active collection plan")
+        if source == "search":
+            if not c.execute("SELECT 1 FROM agent_searches WHERE plan_id=%s AND search_id=%s",(plan_id,search_id)).fetchone():
+                raise ValueError("Choose this plan's search observation")
+            hits = read("searches", search_id)["results"]
+            if not 1 <= number <= len(hits):
+                raise ValueError("Choose a returned result number")
+            target = {"type":"selected_article","name":subject,"source":source,"search_id":search_id,**hits[number-1]}
+        elif source in ("net","blog"):
+            target = {"type":"horse","name":subject,"source":source,"limit":3}
+            if year:
+                if len(year) != 4 or not year.isdecimal():
+                    raise ValueError("Use a four-digit activity year")
+                target.update(first=year+"0101",last=year+"1231")
+        else:
+            raise ValueError("Choose search, net or blog")
+        target["decision"] = reason
+        from psycopg.types.json import Jsonb
+        if not c.execute("SELECT 1 FROM work_items WHERE plan_id=%s AND target=%s", (plan_id, Jsonb(target))).fetchone():
+            add_targets(c,p,[target])
+            c.execute("UPDATE plans SET state=CASE WHEN state='running' THEN state ELSE 'queued' END,ended_at=NULL,updated_at=now() WHERE id=%s",(plan_id,))
+    return {"plan_id":plan_id,"subject":subject,"route":source,"queued":True}
 
 
 def plan_status(plan_id: str) -> dict:
@@ -97,7 +162,10 @@ if __name__ == "__main__":
         for fn in (
             horse_news,
             media_news,
+            history_prepare,
             daily_prepare,
+            plan_search,
+            plan_follow,
             plan_step,
             plan_status,
             race_roster,
