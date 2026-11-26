@@ -1,5 +1,7 @@
 # KeibaAI NLP — 記事への到達経路と馬名を起点にした収集研究
 
+> 2026-11-26追記：本書の実施後、主要媒体を広く探す基礎調査が不足しているとユーザーが指摘した。次の作業順序と処理時間・robotsの扱いは、[主要媒体の基礎調査指示](2026-11-26_nlp_major_media_discovery_instruction.md)と更新後のAGENTS.mdを優先する。
+
 作成日: 2026-11-26（JST）  
 担当: Codex（実地研究・必要な補助実装・Skillへの反映）  
 確認したNLP基準版: `edac9a1c65422748e95b71c199c26699862d2611`
@@ -144,3 +146,4 @@ v3のDB・コード・購入処理・稼働サービスや通常NLP DBを変更�
 [jra-registration]: https://www.jra.go.jp/owner/members/faq/category_e.html
 [jra-entries]: https://www.jra.go.jp/faq/pop02/2_2.html
 [v3-schema]: https://github.com/kendo910x/keibaAI_v3/blob/6b0f354fdec08ee281b0a9ec0420f40dd690392e/sql/v3/phase1/01_create_hist_tables.sql
+

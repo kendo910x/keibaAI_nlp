@@ -12,13 +12,12 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
-from protego import Protego
 
 from research import ROOT, digest, links_only, now, read, save
 
 
-AGENTS = ("*", "KeibaNLPResearch", "ChatGPT-User", "GPTBot")
 HEADERS = {"User-Agent": "KeibaNLPResearch/1.0"}
+REQUEST_INTERVAL_SECONDS = 1.0
 LAST_REQUEST = {}
 
 
@@ -50,35 +49,10 @@ def public_url(url):
     return p
 
 
-@lru_cache(maxsize=128)
-def robots(origin):
-    url = origin + "/robots.txt"
-    for _ in range(5):
-        public_url(url)
-        r = httpx.get(url, headers=HEADERS, timeout=12)
-        if r.is_redirect:
-            url = urljoin(url, r.headers["location"])
-            continue
-        if r.status_code in (404, 410):
-            return Protego.parse("")
-        if r.status_code != 200 or "<html" in r.text[:500].lower():
-            raise Unavailable(f"robots_unavailable_{r.status_code}", r.headers.get("retry-after"))
-        return Protego.parse(r.text)
-    raise Unavailable("robots_redirect_limit")
-
-
-def check_url(url):
-    p = public_url(url)
-    rules = robots(f"{p.scheme}://{p.netloc}")
-    if any(not rules.can_fetch(url, agent) for agent in AGENTS):
-        raise Unavailable("robots_disallowed")
-    return max(1.0, *(rules.crawl_delay(agent) or 0 for agent in AGENTS))
-
-
 def pace(url):
-    delay = check_url(url)
+    public_url(url)
     host = urlsplit(url).netloc
-    time.sleep(max(0, LAST_REQUEST.get(host, 0) + delay - time.monotonic()))
+    time.sleep(max(0, LAST_REQUEST.get(host, 0) + REQUEST_INTERVAL_SECONDS - time.monotonic()))
     LAST_REQUEST[host] = time.monotonic()
 
 
@@ -102,7 +76,7 @@ def rendered_html(url, selector):
     """Use the public page's visible DOM on a machine with Playwright and Edge."""
     from playwright.sync_api import Error as BrowserError, TimeoutError as BrowserTimeout, sync_playwright
 
-    check_url(url)
+    public_url(url)
     with sync_playwright() as p:
         try:
             browser = p.chromium.launch(channel="msedge", headless=True)
@@ -262,7 +236,7 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
         results.append(dict(url=hit["url"], status=rec["status"], capture_id=rec["id"]))
         if rec["status"] in ("ok", "partial"):
             known[key] = known[url_key(rec["final_url"])] = rec["id"]
-        retry_current = rec["status"] in ("http_429", "http_503") or rec["status"].startswith("robots_unavailable_")
+        retry_current = rec["status"] in ("http_429", "http_503")
         if retry_current or rec["status"] in ("http_403", "http_401"):
             retry_after = rec.get("retry_after")
             break
@@ -346,3 +320,4 @@ def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str)
         temp.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
         temp.replace(dest)
     return dict(roster=roster, observation_id=rec["id"], count=len(horses), examples=horses[:5])
+

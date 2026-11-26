@@ -15,7 +15,6 @@ from urllib.parse import urlsplit
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from protego import Protego
 
 
 SHARED = "http://192.168.0.11:30081/mcp"
@@ -89,25 +88,12 @@ async def search(subject: str, query: str, limit: int = 6) -> dict:
 
 
 async def check_access(url):
+    """Validate a candidate without imposing a local robots.txt preflight gate."""
     parts = urlsplit(url)
     if parts.scheme not in ("https", "http") or not parts.hostname:
         return "unsupported_url"
     if links_only(url):
         return "metadata_only"
-    robots = parts._replace(path="/robots.txt", query="", fragment="").geturl()
-    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-        reply = await client.get(robots)
-    if reply.status_code in (404, 410):
-        return "allowed"
-    if reply.status_code != 200 or "<html" in reply.text[:500].lower():
-        return f"robots_unavailable_{reply.status_code}"
-    rules = Protego.parse(reply.text)
-    agents = ("*", "ChatGPT-User", "GPTBot")
-    if any(not rules.can_fetch(url, agent) for agent in agents):
-        return "robots_disallowed"
-    delay = max((rules.crawl_delay(agent) or 0 for agent in agents), default=0)
-    if delay:
-        await asyncio.sleep(delay)
     return "allowed"
 
 
@@ -216,3 +202,4 @@ def valid_item(item):
         and item["phase"] in ("pre", "post", "mixed", "unknown")
         and isinstance(item["text"], str) and bool(item["text"].strip())
     )
+
