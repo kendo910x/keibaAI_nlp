@@ -1,6 +1,6 @@
 # 主要媒体を広く探す入口
 
-2026-11-26に、広いWeb検索と公開ページの閲覧で確認した初歩の地図。研究用コードで全媒体の本文を保存した実績ではない。netkeibaでの件数増加と、主要媒体の基礎調査の完了を混同しない。
+2026-11-26の実地調査。入口の選び方、実際に読める部分、本文を保存した経路を示す。掲載先と署名・配信元はそれぞれ記録する。
 
 ## 探し方
 
@@ -8,23 +8,26 @@
 
 媒体名が見つかったこと、一覧を開けたこと、本文を読めたこと、補助コードで保存できたことは別々に記す。取得ツールの制約で開けない場合は、その経路の結果を残す。「記事がない」「媒体全体が取得不能」とは断定しない。
 
-## 入口と今回確認した範囲
+## 研究用MCPでたどった経路
 
-| 媒体 | 入口・用途 | 今回の閲覧で確認したこと／残ること |
-|---|---|---|
-| スポーツナビ | [競馬ニュース一覧](https://sports.yahoo.co.jp/list/news/keiba?genre=keiba) | 複数媒体の配信元・日時付き見出し、全1,000件という表示、追加表示の入口。1,000件を取得した意味ではない。記事の遷移先や配信元を個別に確かめる |
-| スポニチ競馬Web | [ニュース一覧](https://keiba.sponichi.co.jp/news/) | 日付・キーワード検索欄、新着、特集の入口。[当週の調教記事](https://keiba.sponichi.co.jp/news/20261126s00004048027000c)は公開本文を読めた。研究コードにはrobotsと別のmetadata-only設定が残っており、本文保存済みとは扱わない |
-| 日刊スポーツ | [競馬ニュース一覧](https://www.nikkansports.com/keiba/news/) | 日別見出しと、GI以外を含む次走・有力馬情報。[2024年記事](https://www.nikkansports.com/keiba/news/202404270000975.html)の公開本文も読めた。内部検索・過去一覧の実操作は追加調査 |
-| デイリー・うま屋 | [ニュース](https://www.daily.co.jp/umaya/news/) | ニュース・コラムの一覧と記事へのリンク。[当週の調教記事](https://www.daily.co.jp/umaya/news/2026/11/26/0021073227.shtml)で本文と調教診断を確認。次走報・馬体診断等の別入口も調べる |
-| 東スポ競馬 | [ニュース一覧](https://tospo-keiba.jp/news) | 検索インデックスでは記事候補が見えるが、今回のWeb抽出はメニュー中心。一覧の表示後DOM、検索、ページ送りは未確認であり、既存ブラウザー手段が使える場面で調べる |
-| スポーツ報知・馬トク | [馬トク](https://umatoku.hochi.co.jp/) | 公式入口とスポーツナビの配信元表示を確認。今回のWeb取得ツールは直接閲覧を拒否した。内部導線と本文は未確認 |
-| サンスポ・ZBAT! | [競馬入口](https://www.sanspo.com/race/) | 本体は今回のWeb取得ツールが拒否。ウマニティ等でサンケイスポーツの配信表示を確認。本体の導線と配信先を区別して調べる |
-| ウマニティ | [中央競馬ニュース](https://umanity.jp/racedata/news_top.php)・[ニュース一覧](https://umanity.jp/racedata/race_newslist.php) | サンスポ配信と独自記事。[2021年ジャパンC特集](https://umanity.jp/racedata/graderace/0015/2021/race_news.php)に事前調教・枠順・前走談話・事後談話が日付付きでまとまる。[当時の陣営談話](https://umanity.jp/racedata/race_newsdet.php?nid=11678673)の本文も確認 |
-| 競馬ラボ | [ニュース一覧](https://www.keibalab.jp/topics/backnumber.html) | 先行研究に一覧・名簿の到達記録がある。今回のWeb直接取得は403。既存のmetadata-only方針と今回のHTTP結果は別。取得経路を添えて扱う |
-| 競馬ブック | [Web](https://p.keibabook.co.jp/)・[Smart](https://s.keibabook.co.jp/) | 専門紙サービスの候補。今回のWeb取得は403で公開記事の範囲は未確認。存在確認だけで本文収集可能とはしない |
-| ラジオNIKKEI | [競馬実況web](https://www.radionikkei.jp/keiba/)・[2026年11月ニュース](https://www.radionikkei.jp/keiba_article/news/2026/11/) | 月別一覧から[ダノンデサイルの調教師談話](https://www.radionikkei.jp/keiba_article/news/c_271.html)の本文へ到達。前走・調整・追い切り等の取材が詳しい。別の年月の選択も調べる |
-| netkeiba・JRA | [netkeibaニュース](https://news.netkeiba.com/?pid=news_backnumber)・[JRA月別ニュース](https://www.jra.go.jp/news/202611/index.html) | 先行研究の名簿・一覧・特集・馬名検索を再利用し、他媒体との配信関係や記事内容の違いも見る |
+- **馬トク報知**の[記事一覧](https://umatoku.hochi.co.jp/articles)では `.news-top-grid__item a[href*="/articles/20"], .news-list__item a[href*="/articles/20"]` で新着を拾う。事前の調整・記者取材と、引退・次走のニュースが混じる。記事の `p.article__text` をまとめて読む。スポーツナビの「馬トク報知」と同じ見出し・掲載時刻なら、配信先URLと元記事URLを結び付ける。他紙も同じ会見やJRA発表を使う場合がある。
+- **ラジオNIKKEI**の[月別ニュース](https://www.radionikkei.jp/keiba_article/news/2026/11/)は年月を選ぶと `/keiba_article/news/YYYY/MM/` に移る。画面の「もっと見る」で同じ月の残りを展開する。静的HTMLにリンクがあり、VMでも `a.category-list-item-link` が使える。日付なら `li.category-list-item:has(time:-soup-contains("2026/11/22")) a.category-list-item-link`、馬・競走なら `a.category-list-item-link:-soup-contains("六甲アイランド")` のように絞る。この文字列フィルタは静的HTML用。記事には出走登録、調教後の談話、一般競走のレース後コメントがある。時刻欄が「更新」ならその表示を残す。見出しに出ない敗戦馬は競走名から本文を読む。
+- **競馬ブックSmart**の[ニュース](https://s.keibabook.co.jp/news/all)では `.news_section a[href*="/news/detail/"]` が個別記事。中央・地方・海外に移り、ページ下の `a[rel=next]` をたどる。「地方」の最新記事は中央と同じ日に出たとは限らない。登録抹消・転厩など一段落の公開記事も資料に含める。有料サービスへの入口と、今回読んだ公開ニュースを区別する。
+- **デイリーうま屋**の[ニュース](https://www.daily.co.jp/umaya/news/?pg=list)は当日の調教診断、[かわら版](https://www.daily.co.jp/umaya/kawaraban/?pg=list)は前週以前も含む次走・引退を拾える。どちらも `a.news-primary-main-text, a.card-primary-main-text` から `/umaya/news/年/月/日/` の公開記事へ進む。本文は `.mainTxt p.news-detail-desc`、日付は `time.date`。公開記事の私的な研究保存と二次利用の条件を分けて扱う。[同社の著作権に関する案内](https://www.daily.co.jp/company/privacy_protection.shtml)
+- **スポーツナビ**の[競馬ニュース](https://sports.yahoo.co.jp/list/news/keiba?genre=keiba)で配信元を見つける。PCで日付を選んで検索し「もっと見る」を押すと、同じURLのまま別の日・次の候補に移る。引き継ぎには選択日、表示時刻、媒体名と候補URLを残す。通常の `listing(render=true)` はこのクリックまで行わない。
 
-同じ取材の配信先が複数あっても、独立した証言の数にはしない。保存URLは各出典として残せる。新着巡回には日別・カテゴリ別の一覧、過去発掘には年・レース別特集、馬名検索、過去記事の関連リンク等を使い分ける。
+## ほかの入口と保存条件
 
-NLP補助コードによる独自robots事前拒否は撤廃された。上表の外部Web取得ツール自身の拒否は別の観測であり、補助コードの変更で解除したものではない。過去のrobots判定を恒久的な媒体除外へ転記しない。
+| 媒体 | 試せる入口と実際の制約 |
+|---|---|
+| スポニチ競馬Web | [一覧](https://keiba.sponichi.co.jp/news/)のGETフォームに馬名と日付欄がある。ピコローズで16候補、先頭は前週の各馬コメント。公開本文は読めた。研究コードの保存結果は既存方針により `metadata_only`。[利用規約](https://keiba.sponichi.co.jp/terms_of_service) |
+| 日刊スポーツ | [競馬ニュース](https://www.nikkansports.com/keiba/news/)に日別の次走報、引退、追い切りが並ぶ。情報解析・AI利用目的の収集、蓄積等について媒体が示した条件を尊重する。[著作権方針](https://www.nikkansports.com/policy/copyright.html) |
+| 東スポ競馬 | [一覧](https://tospo-keiba.jp/news)は研究HTTPでは200でメニュー中心、PCの表示後DOMは403。スポーツナビの配信元に東スポ競馬を確認した。直接の本文は未確認。[利用規約](https://tospo-keiba.jp/terms) |
+| スポーツ報知本紙 | [競馬タグ](https://hochi.news/tag/%E7%AB%B6%E9%A6%AC)に、馬トクと記事番号・見出しが共通する掲載がある。本紙サイトの会員規約には情報解析の条項がある。今回、掲載先URLを対応付け、本紙本文の蓄積は見送った。[本紙の規約](https://hochi.news/about/agreement/)・[馬トクの規約](https://umatoku.hochi.co.jp/info/kiyaku.html) |
+| サンスポ・ZBAT! | [競馬面](https://www.sanspo.com/race/)から[ジャパンC特集](https://www.sanspo.com/race/racecard/japan-cup/)へ進めた。情報解析・自動取得に関する規約があり、今回はリンクまで。配信先を制限の回避に使わない。[利用規約](https://www.sanspo.com/race/zbat_terms/) |
+| ウマニティ | [日付別ニュース](https://umanity.jp/racedata/news_top.php)と[過去の年別特集](https://umanity.jp/racedata/graderace/0015/2021/race_news.php)。調教、枠順、前走談話、事後談話にたどれる。同じ公式発表にも編集部署名と他社配信があるので署名・発表元を読む。独自記事の一例はWeb閲覧で読めたが、研究HTTPでは202。本文保存は見送った。[利用規約](https://umanity.jp/agreement.php) |
+| 競馬ラボ・競馬のおはなし | [競馬ラボ](https://www.keibalab.jp/topics/backnumber.html)で過去一覧の2ページ目と騎手・コース分析の公開記事を確認。[競馬のおはなし](https://keibana.com/news/)も2ページ目へ移れる。本文保存を見送る既存設定があり、前者はコード、後者は私有方針に掲載されている。[競馬ラボ利用規約](https://www.keibalab.jp/info/agreement.html) |
+| 中日スポーツ | [競馬面](https://www.chunichi.co.jp/chuspo/race/horse)に月別と「次の11件」がある。調教・関係者談の公開部分を読めた。中日新聞プラスの情報解析条項と競馬面への適用範囲を区別し、今回は本文保存を見送った。[著作物利用](https://www.chunichi.co.jp/info/copyrights)・[会員規約](https://www.chunichi.co.jp/service/page/agreement/) |
+| netkeiba・JRA | [netkeiba](https://news.netkeiba.com/?pid=news_backnumber)の馬名検索、[JRA](https://www.jra.go.jp/news/202611/index.html)の月別ニュースは従来の導線。地方を広げる場合は[地方競馬全国協会](https://www.keiba.go.jp/)の公式発表と取材記事を区別する。 |
+
+保存方針・利用条件、ツール自身の拒否、実際のHTTP応答、公開本文の抽出漏れを区別する。独自のrobots事前拒否は撤廃済み。未発見や拒否を観測したら入口と日付を残し、ほかの取材を探せる。

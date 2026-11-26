@@ -19,6 +19,16 @@ from research import ROOT, digest, links_only, now, read, save
 HEADERS = {"User-Agent": "KeibaNLPResearch/1.0"}
 REQUEST_INTERVAL_SECONDS = 1.0
 LAST_REQUEST = {}
+PUBLIC_ARTICLE_LAYOUTS = {
+    ("umatoku.hochi.co.jp", "/articles/"): (
+        "article.news-article p.article__text", "article.news-article h1", "time.note__pubdate"),
+    ("www.radionikkei.jp", "/keiba_article/news/"): (
+        "article.article-box", "h2.proglam-article-title", "time.articles-time"),
+    ("s.keibabook.co.jp", "/news/detail/"): (
+        ".newsbox .newshonbun .honbun", ".newsbox .news h2", ".newsbox .news .date"),
+    ("www.daily.co.jp", "/umaya/news/"): (
+        ".mainTxt p.news-detail-desc", "h1.ttl-main", "time.date"),
+}
 
 
 class Unavailable(Exception):
@@ -122,7 +132,7 @@ def anchor_rows(soup, selector, base):
                 continue
             url = urljoin(base, href)
             if urlsplit(url).scheme in ("http", "https"):
-                label = link.select_one(".txt, .News_Title") or link
+                label = link.select_one(".txt, .News_Title, .news-list__item__title, .category-list-title, dt.title") or link
                 lines = label.get_text("\n", strip=True).splitlines()
                 if len(lines) > 1 and lines[0] in ("ニュース", "レース関連"):
                     lines = lines[1:]
@@ -179,35 +189,55 @@ def article(subject, url, title, listing_id=None):
         final, soup = get_html(url)
         if links_only(final):
             raise Unavailable("metadata_only")
-        main = next((node for selector in (".NewsArticle_Body", ".news_contents_area", ".entry-content",
-                                           "[itemprop=articleBody]", "article")
-                     if (node := soup.select_one(selector)) is not None), None)
+        location = urlsplit(final)
+        layout = next((selectors for (host, prefix), selectors in PUBLIC_ARTICLE_LAYOUTS.items()
+                       if location.hostname == host and location.path.startswith(prefix)), None)
+        if layout:
+            # Select the public story, including all its paragraphs on 馬トク.
+            for node in soup.select('[hidden], [aria-hidden=true], [style]'):
+                if node.attrs is not None and (node.has_attr("hidden") or node.get("aria-hidden") == "true"
+                        or re.search(r"display\s*:\s*none\b", node.get("style", ""), re.I)):
+                    node.decompose()
+            parts = soup.select(layout[0])
+        else:
+            main = next((node for selector in (".NewsArticle_Body", ".news_contents_area", ".entry-content",
+                                               "[itemprop=articleBody]", "article")
+                         if (node := soup.select_one(selector)) is not None), None)
+            parts = [main] if main is not None else []
         jra_result = (urlsplit(final).hostname in ("www.jra.go.jp", "jra.jp")
                       and "/datafile/seiseki/g1/" in urlsplit(final).path and "/result/" in urlsplit(final).path)
-        if main is None and jra_result:
-            main = soup.select_one("#contentsBody > h2 + div.grid")
-        if main is None:
+        if not parts and jra_result:
+            parts = soup.select("#contentsBody > h2 + div.grid")[:1]
+        if not parts:
             raise Unavailable("article_element_missing")
-        for node in main.select("script, style, template, [hidden], [aria-hidden=true], .mov_btn"):
-            node.decompose()
-        text = main.get_text("\n", strip=True)
+        main = parts[0]
+        for part in parts:
+            for node in part.select("script, style, template, [hidden], [aria-hidden=true], .mov_btn"):
+                node.decompose()
+        text = "\n".join(part.get_text("\n", strip=True) for part in parts).strip()
         if not re.search(r"\w", text) or re.search(r"続きを読むには.{0,15}(?:登録|ログイン)|ここから先は有料", text):
             raise Unavailable("no_public_article_body")
         notice = main.find_next_sibling(class_="NewsReadMore")
         preview = bool(notice and re.search(r"登録|ログイン|有料", notice.get_text(strip=True)))
-        heading = soup.select_one(".NewsArticle_Header h1, .news_title h1, h1.entry-title, article h1")
+        heading = soup.select_one(layout[1] if layout else
+                                  ".NewsArticle_Header h1, .news_title h1, h1.entry-title, article h1")
         if jra_result:
             heading = soup.select_one("#contentsBody > h2")
         headline = heading.get_text(" ", strip=True) if heading else title
-        body = headline + "\n" + text if headline and not text.startswith(headline) else text
-        date = soup.select_one('meta[property="article:published_time"], time[datetime], '
-                               '.ArticleNewsData, .news_title .date')
+        has_headline = text.partition("\n")[0] == headline if layout else text.startswith(headline)
+        body = headline + "\n" + text if headline and not has_headline else text
+        date = soup.select_one(layout[2]) if layout else None
+        if date is None:
+            date = soup.select_one('meta[property="article:published_time"], time[datetime], '
+                                   '.ArticleNewsData, .news_title .date')
         published = (date.get("content") or date.get("datetime") or date.get_text(" ", strip=True)) if date else None
         rec.update(status="partial" if preview else "ok", title=headline, final_url=final, fetched_at=now(), body=body,
                    version_id=digest(final + "\n" + body), published_label=published, truncated=preview,
                    source_access="public_preview" if preview else "public_view",
                    extraction="public_article_element", source_element=main.name,
                    source_classes=main.get("class", []))
+        if layout:
+            rec["source_selector"] = layout[0]
     except (Unavailable, httpx.HTTPError, OSError, ValueError) as exc:
         rec["status"] = str(exc)
         if getattr(exc, "retry_after", None):
