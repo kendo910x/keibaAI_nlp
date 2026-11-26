@@ -5,14 +5,24 @@ After=network-online.target
 RequiresMountsFor=/srv/nlp/hermes /srv/nlp/hermes-runtime /srv/nlp/hermes-private
 
 [Container]
-Image=localhost/nlp-hermes:0.22.2-stage3b
+Image=localhost/nlp-runtime:20261127
 Pull=never
 ContainerName=nlp-hermes
 Network=host
 Volume=/srv/nlp/hermes:/opt/data
 Volume=/srv/nlp/hermes-runtime/config.yaml:/opt/data/config.yaml:ro
 Volume=/srv/nlp/hermes-private/nlp_app:/run/secrets/nlp_app:ro
+Volume=/srv/nlp/runtime/app:/opt/keiba:ro
+Volume=/srv/nlp/runtime/data:/var/lib/keiba
+Volume=/srv/nlp/runtime/work:/opt/nlp-research:ro
+Volume=/srv/nlp/runtime/research/keiba-routes-20261126:/var/tmp/keiba-routes-20261126
+Volume=/srv/nlp/runtime/research/keiba-search-20261126:/var/tmp/keiba-search-20261126
 Environment=HERMES_SKIP_CONFIG_MIGRATION=1
+Environment=TZ=Asia/Tokyo
+Environment=KEIBA_RESEARCH_DIR=/var/lib/keiba
+Environment=KEIBA_RUNTIME_DB=1
+Environment=KEIBA_RESEARCH_ACTOR=hermes
+Environment=KEIBA_INTERPRET_SKILL=/opt/data/skills/keiba-interpret/SKILL.md
 PodmanArgs=--memory=3g --cpus=1.5
 Exec=sleep infinity
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Tick native Hermes Cron when collection has been enabled
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

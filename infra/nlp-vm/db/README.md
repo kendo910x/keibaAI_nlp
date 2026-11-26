@@ -1,5 +1,7 @@
 # VM15 の NLP 専用データベース
 
+2026年11月27日、既存の `public` スキーマを保全して `collection` スキーマを追加した。原文版・取得・独立解釈・名簿・進捗と、閲覧ロールの権限は[追加migration](migrations/002_collection_runtime.sql)、配備・バックアップ・復旧は[通常運用手順](../runtime/README.md)を参照する。
+
 通常DBは `keiba_nlp`。開発PCから `192.168.0.14:5432` に `nlp_app` と SCRAM-SHA-256 で接続する。DBの表示時刻は UTC。TLSなしの接続先は承認済み LAN `192.168.0.0/24` に限定する。
 
 ## 配置と接続

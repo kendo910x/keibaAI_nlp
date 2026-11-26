@@ -1,5 +1,7 @@
 # VM15 `keiba-nlp` の導入と受入
 
+2026年11月27日以降の収集・閲覧の配置、運用開始待ちの3処理、再開時の管理コマンドは[VM15の通常運用手順](runtime/README.md)を参照する。
+
 対象は既存の VMID 15、`[datastore1] keiba-nlp/keiba-nlp.vmx`。構成は EFI、HW14、2 vCPU、8 GiB、LSI Logic の 100 GiB thin VMDK、VLAN 101 の E1000 1枚。作業範囲、停止条件、V1〜V11 は[復旧指示書](../../docs/instructions/2026-11/2026-11-22_nlp_vm_recovery_instruction.md)、実施した工程と電源・媒体の最終状態は[実測レポート](../../docs/reports/2026-11/2026-11-22_nlp_vm_recovery_report.md)に記録する。
 
 2026-11-22の受入では両媒体を切断し、Ubuntu 24.04.5を本体からEFI起動した。管理接続は `nlp@192.168.0.14`。通常再起動後にrootful Podmanの `nlp-demo` が自動起動し、`pgdata` は空、TCP 5432の待受は0件だった。

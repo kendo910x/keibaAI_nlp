@@ -1,0 +1,14 @@
+[Unit]
+Description=Interpret pending NLP articles on the local model
+Requires=nlp-hermes.service
+After=nlp-hermes.service
+
+[Service]
+ExecStart=/usr/bin/podman exec --user 10000:10000 --env KEIBA_RESEARCH_ACTOR=server-worker nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py interpret
+ExecStop=/usr/bin/podman exec --user 10000:10000 nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py stop-interpret
+TimeoutStopSec=32min
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

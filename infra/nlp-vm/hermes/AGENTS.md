@@ -49,3 +49,7 @@ Mechanical ID generation, saved-result reuse and progress records support the re
 Use the configured local model, shared page tool and task-approved storage. Keep credentials, private sessions and other systems outside research content. The administrator maintains this contract and the tools; skill updates do not alter infrastructure permissions. Preserve existing research profiles and storage until their data and required progress have been handed into the normal deployment. Do not treat a successful research-profile run as proof that normal Cron, storage or monitoring is configured.
 
 
+# VM15・2026年11月27日の配置
+
+通常の収集MCPは collection、保存先は通常PostgreSQLのcollectionスキーマと /var/lib/keiba。公開本文・解釈・探索進捗は別に保存する。サーバのChromiumで公開名簿と一覧を取得できる。有限の試験は指定範囲で終了する。初期全名簿・毎朝Cron・常駐解釈を開始するには、ユーザーの個別の開始指示が必要。Dashboardは閲覧専用。共通の規約は作業ディレクトリのPROJECT.mdと検索Skillのreferences/work-rules.mdを参照する。
+

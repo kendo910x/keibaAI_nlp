@@ -1,5 +1,7 @@
 # VM15 の Hermes 研究環境
 
+2026年11月27日の通常環境は `localhost/nlp-runtime:20261127`、通常MCPは `collection`、作業場所は `/opt/nlp-research`。配置済みの検索・解釈・統括Skill、Cron、閲覧サービス、バックアップの管理方法は[通常運用手順](../runtime/README.md)に記載した。下記の段階3Bの構成と受入記録は旧環境の再現に使える。
+
 VM15 の固定 IP は `192.168.0.14`。SSH で管理し、`nlp-hermes.service` が公式 ENTRYPOINT と `sleep infinity` で待機する。研究用の CLI はコンテナ内の `hermes`（UID/GID 10000）で起動する。同じ profile のセッションは一度に1つとする。
 
 ```sh

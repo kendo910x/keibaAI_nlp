@@ -1,0 +1,26 @@
+[Unit]
+Description=Keiba NLP read-only Dashboard
+After=network-online.target nlp-postgres.service
+Wants=network-online.target
+
+[Container]
+Image=localhost/nlp-runtime:20261127
+Pull=never
+ContainerName=nlp-dashboard
+Network=host
+User=10000:10000
+ReadOnly=true
+DropCapability=all
+NoNewPrivileges=true
+Volume=/srv/nlp/runtime/app:/opt/keiba:ro
+Volume=/srv/nlp/hermes/cron:/run/hermes-cron:ro
+Volume=/srv/nlp/hermes-private/nlp_viewer:/run/secrets/nlp_viewer:ro
+Environment=TZ=Asia/Tokyo
+PodmanArgs=--entrypoint=/opt/nlp-db/venv/bin/python
+Exec=-B /opt/keiba/dashboard.py
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-"""Private, per-observation files for the three search settings. No database writes."""
+"""Save observations and interpret an article independently in its original time context."""
 
 import asyncio
 import hashlib
@@ -8,7 +8,7 @@ import re
 import time
 import unicodedata
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,6 +21,7 @@ SHARED = "http://192.168.0.11:30081/mcp"
 LLM = "http://192.168.0.13:8731/v1/chat/completions"
 MODEL = "halogen-qwen3.8-flash-next"
 ROOT = Path(os.environ["KEIBA_RESEARCH_DIR"]).resolve()
+SERVER = os.environ.get("KEIBA_RUNTIME_DB") == "1" and ROOT == Path("/var/lib/keiba")
 
 
 def now():
@@ -40,6 +41,9 @@ def save(group, record):
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     temp.replace(path)
+    if SERVER:
+        from corpus import record as persist
+        persist(group, record)
     return record
 
 
@@ -144,27 +148,41 @@ def interpretation_summary(result, capture_id, items, reused):
                 examples=items[:3], reused=reused, error=result.get("error"))
 
 
-async def interpret(capture_id: str, fresh: bool = False) -> dict:
-    """Interpret a saved body independently. Reuse a successful same-version/Skill/settings result unless fresh."""
-    article = read("captures", capture_id)
-    if "body" not in article or article["status"] not in ("ok", "partial"):
-        return dict(status="no_captured_body", capture_id=capture_id)
+def interpretation_config():
     skill = Path(os.environ["KEIBA_INTERPRET_SKILL"]).read_text(encoding="utf-8")
     settings = dict(model=MODEL, max_tokens=65536, temperature=0, reasoning_effort="xhigh",
                     chat_template_kwargs={"enable_thinking": True}, stream=False)
+    return skill, settings
+
+
+async def interpret(capture_id: str, fresh: bool = False) -> dict:
+    """Interpret a saved body with its date label; reuse only an identical successful input."""
+    article = read("captures", capture_id)
+    if "body" not in article or article["status"] not in ("ok", "partial"):
+        return dict(status="no_captured_body", capture_id=capture_id)
+    skill, settings = interpretation_config()
     result = dict(capture_id=capture_id, version_id=article["version_id"], subject=article["subject"],
                   skill="keiba-interpret", skill_sha256=digest(skill), settings=settings, started_at=now())
+    context = {"掲載・更新欄の表示": article.get("published_label"), "取得観測日時": article["observed_at"]}
+    payload = json.dumps({**context, "取得本文": article["body"]}, ensure_ascii=False)
+    result.update(input_format="article-date-v1", date_context=context,
+                  input_key=digest(json.dumps([article["version_id"], payload, skill, settings],
+                                              ensure_ascii=False, sort_keys=True)))
     if not fresh:
-        for path in (ROOT / "interpretations").glob("*.json"):
+        if SERVER:
+            from corpus import input_success
+            prior_id = input_success(result["input_key"])
+            paths = [ROOT / "interpretations" / (prior_id + ".json")] if prior_id else []
+        else:
+            paths = (ROOT / "interpretations").glob("*.json")
+        for path in paths:
             prior = json.loads(path.read_text(encoding="utf-8"))
-            if prior["status"] == "ok" and all(
-                prior.get(key) == result[key] for key in ("version_id", "skill_sha256", "settings")
-            ):
+            if prior["status"] == "ok" and prior.get("input_key") == result["input_key"]:
                 return interpretation_summary(prior, capture_id, json.loads(prior["content"])["items"], True)
     items = []
     started = time.monotonic()
     try:
-        messages = [dict(role="system", content=skill), dict(role="user", content=article["body"])]
+        messages = [dict(role="system", content=skill), dict(role="user", content=payload)]
         async with httpx.AsyncClient(timeout=1800) as client:
             reply = await client.post(LLM, json=dict(**settings, messages=messages))
             reply.raise_for_status()
@@ -183,6 +201,7 @@ async def interpret(capture_id: str, fresh: bool = False) -> dict:
             item["horse"]: "".join(unicodedata.normalize("NFKC", item["horse"]).split())
             for item in items if item["horse"]
         }
+        result["normalized_targets"] = [normalized_target(item) for item in items]
     except asyncio.CancelledError:
         result.update(status="interrupted", error="The caller cancelled the interpretation")
         raise
@@ -192,6 +211,22 @@ async def interpret(capture_id: str, fresh: bool = False) -> dict:
         result.update(observed_at=now(), seconds=round(time.monotonic() - started, 2))
         save("interpretations", result)
     return interpretation_summary(result, capture_id, items, False)
+
+
+def normalized_target(item):
+    horse = "".join(unicodedata.normalize("NFKC", item.get("horse") or "").split()) or None
+    venue = item.get("venue")
+    places = ("札幌","函館","福島","新潟","東京","中山","中京","京都","阪神","小倉")
+    race_key = None
+    if isinstance(venue,str) and venue.removesuffix("競馬場") in places:
+        try:
+            day = date.fromisoformat(item.get("race_date") or "")
+            number = int(item.get("race_no") or 0)
+            if 1 <= number <= 12:
+                race_key = f"{day:%Y%m%d}/{places.index(venue.removesuffix('競馬場'))+1:02d}/{number:02d}"
+        except (ValueError, TypeError):
+            pass
+    return {"horse":horse,"race":item.get("race"),"race_key":race_key}
 
 
 def valid_item(item):

@@ -1,10 +1,29 @@
 _config_version: 50
 model:
-  provider: custom
+  provider: custom:keiba-research
   default: halogen-qwen3.8-flash-next
   base_url: http://192.168.0.13:8731/v1
   context_length: 262144
 fallback_model: []
+providers:
+  keiba-research:
+    base_url: http://192.168.0.13:8731/v1
+    default_model: halogen-qwen3.8-flash-next
+    api_mode: chat_completions
+    extra_body:
+      max_tokens: -1
+      reasoning_effort: xhigh
+      chat_template_kwargs: {enable_thinking: true}
+agent: {reasoning_effort: xhigh}
+delegation:
+  max_concurrent_children: 1
+  max_spawn_depth: 1
+  oneshot_max_children: 4
+  max_iterations: 15
+  inherit_mcp_toolsets: true
+  subagent_auto_approve: false
+timeouts:
+  tools: {sequential_call: 1950, concurrent_batch: 1950}
 compression:
   enabled: true
   threshold: 0.50
@@ -57,8 +76,22 @@ tools:
   tool_search:
     enabled: "off"
 platform_toolsets:
-  cli: [skills, memory, session_search, mcp-nlpdb, mcp-shared]
+  cli: [skills, memory, session_search, delegation, mcp-collection, mcp-nlpdb, mcp-shared]
+  cron: [skills, delegation, mcp-collection]
 mcp_servers:
+  collection:
+    command: /opt/nlp-db/venv/bin/python
+    args: [-B, /opt/keiba/collection_mcp.py]
+    env:
+      KEIBA_RESEARCH_DIR: /var/lib/keiba
+      KEIBA_RUNTIME_DB: "1"
+      KEIBA_RESEARCH_ACTOR: hermes
+      KEIBA_BROWSER_EXECUTABLE: /usr/bin/chromium
+      KEIBA_INTERPRET_SKILL: /opt/data/skills/keiba-interpret/SKILL.md
+      TZ: Asia/Tokyo
+    timeout: 1950
+    tools: {resources: false, prompts: false}
+    sampling: {enabled: false}
   nlpdb:
     command: /opt/nlp-db/venv/bin/python
     args: [-B, /opt/nlp-db/server.py]

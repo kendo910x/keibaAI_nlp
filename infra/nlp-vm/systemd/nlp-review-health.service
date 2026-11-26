@@ -1,0 +1,7 @@
+[Unit]
+Description=Check NLP read dependencies without inference or article collection
+After=nlp-hermes.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/bin/podman exec --user 10000:10000 nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/health.py "$(/usr/bin/systemctl is-active nlp-hermes-tick.timer)" "$(/usr/bin/systemctl is-active nlp-interpret.service)"'

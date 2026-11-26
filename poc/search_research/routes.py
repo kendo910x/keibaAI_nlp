@@ -2,10 +2,12 @@
 
 import gzip
 import json
+import os
 import re
 import socket
 import time
 import uuid
+from email.utils import parsedate_to_datetime
 from functools import lru_cache
 from ipaddress import ip_address
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
@@ -13,7 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import httpx
 from bs4 import BeautifulSoup
 
-from research import ROOT, digest, links_only, now, read, save
+from research import ROOT, SERVER, digest, links_only, now, read, save
 
 
 HEADERS = {"User-Agent": "KeibaNLPResearch/1.0"}
@@ -62,8 +64,44 @@ def public_url(url):
 def pace(url):
     public_url(url)
     host = urlsplit(url).netloc
+    if SERVER:
+        # Each collector and browser on VM15 shares the same per-host wait.
+        server_pace(host)
+        return
     time.sleep(max(0, LAST_REQUEST.get(host, 0) + REQUEST_INTERVAL_SECONDS - time.monotonic()))
     LAST_REQUEST[host] = time.monotonic()
+
+
+def server_pace(host, retry_seconds=None):
+    import fcntl
+    folder = ROOT / "pacing"
+    folder.mkdir(exist_ok=True)
+    with (folder / digest(host)).open("a+") as state:
+        fcntl.flock(state, fcntl.LOCK_EX)
+        state.seek(0)
+        values = state.read().split()
+        last, cooldown = map(float, values) if len(values)==2 else (0,0)
+        current = time.time()
+        if retry_seconds is None:
+            if cooldown > current:
+                raise Unavailable("cooldown", str(max(1,round(cooldown-current))))
+            time.sleep(max(0, last + REQUEST_INTERVAL_SECONDS-current))
+            last = time.time()
+        else:
+            cooldown = max(cooldown,current+retry_seconds)
+        state.seek(0)
+        state.truncate()
+        state.write(f"{last} {cooldown}")
+
+
+def record_limit(url, status, header):
+    if SERVER and status in (429,503):
+        try:
+            seconds = int(header)
+        except (TypeError,ValueError):
+            try: seconds = parsedate_to_datetime(header).timestamp()-time.time()
+            except (TypeError,ValueError,OverflowError): seconds=60
+        server_pace(urlsplit(url).netloc,max(1,seconds))
 
 
 def get_html(url):
@@ -75,6 +113,7 @@ def get_html(url):
                 url = urljoin(url, r.headers["location"])
                 continue
             if r.status_code != 200:
+                record_limit(url,r.status_code,r.headers.get("retry-after"))
                 raise Unavailable(f"http_{r.status_code}", r.headers.get("retry-after"))
             if "html" not in r.headers.get("content-type", "").lower():
                 raise Unavailable("not_html")
@@ -89,11 +128,14 @@ def rendered_html(url, selector):
     public_url(url)
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch(channel="msedge", headless=True)
+            executable = os.environ.get("KEIBA_BROWSER_EXECUTABLE")
+            browser = p.chromium.launch(headless=True, **({"executable_path": executable}
+                                        if executable else {"channel": "msedge"}))
         except BrowserError as exc:
             raise Unavailable("browser_unavailable") from exc
         page = browser.new_page(locale="ja-JP")
 
+        blocked=[]
         def guard(route):
             request = route.request
             if request.resource_type in ("image", "font", "media"):
@@ -101,7 +143,8 @@ def rendered_html(url, selector):
             if request.is_navigation_request() and request.frame == page.main_frame:
                 try:
                     pace(request.url)
-                except (Unavailable, OSError, ValueError, httpx.HTTPError):
+                except (Unavailable, OSError, ValueError, httpx.HTTPError) as exc:
+                    blocked.append(exc)
                     return route.abort()
             return route.continue_()
 
@@ -109,10 +152,12 @@ def rendered_html(url, selector):
         try:
             response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except BrowserError as exc:
+            if blocked:raise blocked[-1] from exc
             raise Unavailable("browser_navigation_failed") from exc
         if not response:
             raise Unavailable("browser_no_response")
         if response.status != 200:
+            record_limit(page.url,response.status,response.headers.get("retry-after"))
             raise Unavailable(f"http_{response.status}", response.headers.get("retry-after"))
         try:
             page.locator(selector).first.wait_for(state="attached", timeout=8000)
@@ -166,7 +211,10 @@ def listing(subject: str, url: str, selector: str, next_selector: str = "",
                 retry_after=record.get("retry_after"))
 
 
-def known_articles():
+def known_articles(keys=()):
+    if SERVER:
+        from corpus import lookup
+        return lookup(list(keys))
     latest = {}
     for p in (ROOT / "captures").glob("*.json"):
         item = json.loads(p.read_text(encoding="utf-8"))
@@ -253,7 +301,7 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
     if offset < 0 or not 1 <= limit <= 100 or offset > len(source["candidates"]):
         raise ValueError("Use a valid listing offset and 1..100 articles per call")
     start = time.monotonic()
-    known = known_articles()
+    known = known_articles(url_key(hit["url"]) for hit in source["candidates"][offset:offset+limit])
     results = []
     retry_current = False
     retry_after = None
@@ -263,10 +311,11 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
             results.append(dict(url=hit["url"], status="known", capture_id=known[key]))
             continue
         rec = article(source["subject"], hit["url"], hit["title"], listing_id)
-        results.append(dict(url=hit["url"], status=rec["status"], capture_id=rec["id"]))
+        unchanged = rec.get("version_id") and key in known and read("captures",known[key]).get("version_id")==rec["version_id"]
+        results.append(dict(url=hit["url"], status="known" if unchanged else rec["status"], capture_id=rec["id"]))
         if rec["status"] in ("ok", "partial"):
             known[key] = known[url_key(rec["final_url"])] = rec["id"]
-        retry_current = rec["status"] in ("http_429", "http_503")
+        retry_current = rec["status"] in ("http_429", "http_503","cooldown")
         if retry_current or rec["status"] in ("http_403", "http_401"):
             retry_after = rec.get("retry_after")
             break
@@ -281,9 +330,12 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
 
 def capture_url(subject: str, url: str, title: str = "", revisit: bool = False) -> dict:
     """Capture an article URL found on a public page. Reuse a stored URL by default."""
-    prior = None if revisit else known_articles().get(url_key(url))
-    rec = read("captures", prior) if prior else article(subject, url, title)
-    return dict(capture_id=rec["id"], status=rec["status"], known=bool(prior),
+    key = url_key(url)
+    prior_id = known_articles([key]).get(key)
+    prior = read("captures", prior_id) if prior_id else None
+    rec = prior if prior and not revisit else article(subject, url, title)
+    return dict(capture_id=rec["id"], status=rec["status"], known=bool(prior and rec.get("version_id")==prior["version_id"]),
+                revisited=bool(prior and revisit),retry_after=rec.get("retry_after"),
                 url=rec.get("final_url", url), title=rec["title"], chars=len(rec.get("body", "")))
 
 
@@ -327,7 +379,7 @@ def seeds(roster: str, offset: int = 0, limit: int = 12, name: str = "", year: s
                 next_offset=min(offset+limit, len(rows)), **source_details)
 
 
-def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str) -> dict:
+def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str, scope: str = "research") -> dict:
     """Read horse-name cells on a public roster. Keep this dated observation and update the named copy."""
     if not re.fullmatch(r"[a-z0-9-]+", roster) or roster == "history-jra":
         raise ValueError("Choose a daily roster name")
@@ -341,7 +393,7 @@ def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str)
             if link and link.get("href"):
                 horse["source_link"] = urljoin(final, link["href"])
             horses.append(horse)
-    rec = save("roster_pages", dict(roster=roster, stage=stage, race_key=race_key, source=final,
+    rec = save("roster_pages", dict(roster=roster, stage=stage, race_key=race_key, source=final, scope=scope,
                selector=selector, observed_at=now(), horses=horses))
     if horses:
         dest = ROOT / "rosters" / (roster + ".json")
@@ -349,5 +401,8 @@ def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str)
         temp = dest.with_suffix("." + uuid.uuid4().hex + ".tmp")
         temp.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
         temp.replace(dest)
+        if SERVER:
+            from corpus import record
+            record("rosters",{**rec,"id":roster,"observation_id":rec["id"]})
     return dict(roster=roster, observation_id=rec["id"], count=len(horses), examples=horses[:5])
 

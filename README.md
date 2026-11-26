@@ -6,7 +6,7 @@
 
 当面のゴールは、自然言語の曖昧さを許容しながら、競馬の情報を広く大量に継続蓄積することです。分類・収集は「9割がた当たれば十分」という実用性の目安で進めます。厳密な正解率90%の達成証明や全件検査を要求するものではありません。
 
-**次の作業：[サーバ実装・閲覧専用Dashboard・収集開始前レビューの指示書](docs/instructions/2026-11/2026-11-26_nlp_server_runtime_dashboard_instruction.md)。** 研究で得た方法・Skill・コードをサーバへ実装・配置し、既存記事の閲覧と有限の試験、完成したSkillと記事カバー率の確認まで進めます。**本格収集は開始しません。** 毎朝の自動収集と全名簿の初期構築は、ユーザーの確認・開始指示まで保留します。この文書更新はサーバへの配備完了を意味しません。
+**VM15の[閲覧専用Dashboard](http://192.168.0.14:8786/)はLAN内で利用できます。** 通常DBへ研究コーパス599 URL・600版・既存解釈13版を引き継ぎ、有限試験・標本調査で得た記事も同じ資料庫から読めます。移行前の通常DB資料は由来別に閲覧できます。全名簿の初期構築・毎朝のCron・常駐解釈は運用開始待ちです。[開始前レビュー](docs/reports/2026-11/2026-11-27_nlp_server_runtime_dashboard_report.md)・[標本の集計](docs/reports/2026-11/2026-11-27_nlp_coverage_report.md)・[VM15の運用手順](infra/nlp-vm/runtime/README.md)
 
 | 用途 | 開始指示後の運用 | 今回の引き渡し |
 |---|---|---|
@@ -19,7 +19,7 @@
 通常運転は開発PCやCodexに依存させません。今回は「実装完了・運用開始待ち」で引き渡します。最終的な3つのSkillと、重賞・条件戦、年代、有力馬とその他でどれだけ記事が揃うかを事前に確認します。選んだレースの全出走馬と名簿からの補助標本を調べ、未発見も報告します。カバー率90%などの合格値は設けません。前版の毎朝の有効化・初期構築開始の指示は取り消しています。
 
 - **確認済みの研究成果**：馬トク報知、デイリーうま屋、競馬ブックSmart、ラジオNIKKEIから公開本文を148 URL追加しました。最新レポートの研究領域は累計599 URL・600版、独立解釈済み13版です。通常DBの件数ではありません。[主要媒体の実施レポート](docs/reports/2026-11/2026-11-26_nlp_major_media_discovery_report.md)
-- **次工程で使う資産**：[媒体別の手引き](skills/keiba-search/references/media-discovery.md)、[導線・馬名研究](docs/reports/2026-11/2026-11-26_nlp_collection_routes_horse_seeds_report.md)、[検索研究・初期Skillの実施レポート](docs/reports/2026-11/2026-11-26_nlp_search_research_initial_skills_report.md)。本文・独立推論・Skill・名簿・再開情報を引き継ぎ、具体的な実装上の不足を補います。
+- **配置したSkill**：[検索](skills/keiba-search/SKILL.md)・[記事解釈](skills/keiba-interpret/SKILL.md)・[親の統括](skills/keiba-coordinate/SKILL.md)。検索Skillから[媒体別の手引き](skills/keiba-search/references/media-discovery.md)を参照できます。
 - **維持する方針**：[AGENTS.md §3.1、§3.2、§5](AGENTS.md)。曖昧さを許容し、初期データのLocal LLM処理は数日〜1週間程度でも構いません。記事が見つからない馬には固執せず、独自のrobots事前拒否は撤廃済みです。[方針・コード修正の記録](docs/reports/2026-11/2026-11-26_nlp_media_discovery_policy_update_report.md)
 - **従来環境の引き継ぎ**：[段階3C引き継ぎ書（2026-11-26）](docs/handoffs/2026-11/2026-11-26_stage3c_redesign_handover.md)。同書作成後の方針と作業順序は、上の新しい実装指示書を優先します。
 

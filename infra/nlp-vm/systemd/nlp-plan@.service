@@ -1,0 +1,12 @@
+[Unit]
+Description=Resume the specified finite collection plan %i
+Requires=nlp-hermes.service
+After=nlp-hermes.service
+
+[Service]
+ExecStart=/usr/bin/podman exec --user 10000:10000 --env KEIBA_RESEARCH_ACTOR=server-worker nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py run %i --respect-stop
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
