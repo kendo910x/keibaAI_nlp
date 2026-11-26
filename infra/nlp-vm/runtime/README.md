@@ -1,8 +1,19 @@
 # VM15の収集・閲覧を管理する
 
-> **2026-11-27最新指示：本番の研究・試験データを清掃し、検証領域を分離する。** [実行指示書](../../../docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)を先に読む。以下は分離前の配置と運用手順を含む。研究データを通常DBへ取り込む手順は再実行しない。試験は検証用DB・永続領域・プロファイルで行い、現在の文書更新を実機清掃完了と解釈しない。カバー率調査は終了し、本番の各開始例は別途の開始指示まで実行しない。
+本番の資料庫を空に戻し、旧研究を復元検証した私有退避物と新しい検証用資料庫を分けた。LANの閲覧画面は [本番](http://192.168.0.14:8786/) と [検証](http://192.168.0.14:8787/)。本番の全名簿、毎朝予定、常駐解釈の開始には個別指示を要する。
 
-[競馬資料庫](http://192.168.0.14:8786/)で稼働状況、記事、実行履歴を閲覧する。VM15は `192.168.0.14`、管理はSSHユーザー `nlp`、以下はVM15の管理者シェルでのコマンド。データと運転はサーバにある。2026年11月27日の引き渡しでは、毎朝の予定は未登録、全名簿の計画と常駐解釈は未起動。下の開始例はユーザーが指定した処理の開始時に使う。
+| 用途 | 本番 | 有限試験 |
+|---|---|---|
+| DB | keiba_nlp | keiba_nlp_trial |
+| 書込・閲覧 | nlp_app / nlp_viewer | nlp_trial_app / nlp_trial_viewer |
+| 本文と再開情報 | /srv/nlp/runtime/data | /srv/nlp/trial/data |
+| Hermes・Skill・セッション・Cron | /srv/nlp/hermes | /srv/nlp/trial/hermes |
+| 毎朝の起動 | 本番予定は未登録 | 1回限定の試験予定 |
+| Dashboard | nlp-dashboard、8786 | nlp-dashboard-trial、8787 |
+
+両環境の内部パスは /var/lib/keiba と /opt/data。過去名簿は共有の読取専用入力 /srv/nlp/runtime/work/inputs/history-jra.json.gz に配置し、日々の名簿・観測とは分ける。各サービスには対象DB名を記した読取り専用の /run/keiba/database と、その用途の秘密1個だけをマウントする。旧MCPも同じ設定を使う。再取込は現在のデータマウントだけを読む。旧資料は /srv/nlp/backups/two-pattern-20261127/ に保管し、復元確認DBは接続停止。過去報告の本番Dashboard記事リンクは退避前の履歴を指す。
+
+検証では /srv/nlp/trial/request.json に実行日 day と名簿の先頭頭数 history_limit を設定する。通常の朝プロンプトを検証用Hermesで1度起動し、過去用には指定範囲を history_prepare に渡す。両方の収集計画を作成した後、検証コンテナで operations.py finite <過去計画ID> <日次計画ID> が該当する保存版を順次解釈する。取得再利用も計画に結び付け、同じ版は1回処理する。両方の収集が終了し解釈待ちがなくなると終了する。試行の再開は同じ計画ID・JST日を用いる。
 
 ## 配置と読取り
 
@@ -11,7 +22,7 @@
 | Hermes | `nlp-hermes.service`、通常プロファイル `/srv/nlp/hermes`（コンテナ内 `/opt/data`）、UID/GID 10000。固定Hermesの公式Cronを使う |
 | 実装 | `/srv/nlp/runtime/app` → `/opt/keiba`。配備コミットは `/srv/nlp/runtime/RELEASE`。コード、設定、作業規約はエージェントから読み取り専用 |
 | Skill | `/opt/data/skills/{keiba-search,keiba-interpret,keiba-coordinate}`。各Skillの `references/work-rules.md` に共通規約を複製。通常作業ディレクトリは `/opt/nlp-research` |
-| 取得・解釈 | 通常PostgreSQLの `collection.versions / captures / interpretations`。取得IDから元URL・本文版・解釈入力が引ける。旧DBは `public` に保存。`observations` は一覧、版への経路、名簿、取得の観測 |
+| 取得・解釈 | 通常PostgreSQLの `collection.versions / captures / interpretations`。取得IDから元URL・本文版・解釈入力が引ける。旧形式のスキーマは `public`。本番の旧試験記事は退避済み。`observations` は一覧、版への経路、名簿、取得の観測 |
 | 進捗とファイル | `collection.plans / work_items`。私有ファイルは `/srv/nlp/runtime/data` → `/var/lib/keiba`。本文、観測ID、名簿、方針、標本はこの領域。対象を途中で増減しても完了位置はDBに残る |
 | 閲覧 | `nlp-dashboard.service`、VM15のLANアドレスのTCP 8786のみ。読取ロール `nlp_viewer` に必要な表・ビューのSELECTを付与。旧DBも別一覧で読める |
 | 健康確認 | `nlp-review-health.timer` が5分ごとにモデル一覧、共用MCPのツール、公開月別一覧のHTTP状態、Cron用タイマー、常駐解釈の状態を記録。本文保存・モデル回答生成は行わない |
@@ -28,7 +39,7 @@ du -sh /srv/nlp/runtime/data /srv/nlp/hermes
 
 ## 過去名簿
 
-`history` は既存の `rosters/history-jra.json.gz` から馬・活動年・指定媒体の対象を固定する。SHA-256、対象馬数、期間は計画に保存する。同じ名簿・条件の作成は同じIDを返す。既定は馬名の媒体内検索とラジオNIKKEIの月別一覧。月別一覧の続きは観測IDとoffsetを使う。本文がある既知URLは再利用し、必要な再訪は `capture_url(revisit=true)`。更新版は同じURLに追加する。
+`history` は既存の `/opt/nlp-research/inputs/history-jra.json.gz` から馬・活動年・指定媒体の対象を固定する。SHA-256、対象馬数、期間は計画に保存する。同じ名簿・条件の作成は同じIDを返す。既定は馬名の媒体内検索とラジオNIKKEIの月別一覧。月別一覧の続きは観測IDとoffsetを使う。本文がある既知URLは再利用し、必要な再訪は `capture_url(revisit=true)`。更新版は同じURLに追加する。
 
 ```bash
 # 開始指示後。IDの作成と実行は別操作。

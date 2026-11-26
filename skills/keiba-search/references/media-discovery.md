@@ -20,14 +20,16 @@
 
 | 媒体 | 試せる入口と実際の制約 |
 |---|---|
-| スポニチ競馬Web | [一覧](https://keiba.sponichi.co.jp/news/)のGETフォームに馬名と日付欄がある。ピコローズで16候補、先頭は前週の各馬コメント。公開本文は読めた。研究コードの保存結果は既存方針により `metadata_only`。[利用規約](https://keiba.sponichi.co.jp/terms_of_service) |
-| 日刊スポーツ | [競馬ニュース](https://www.nikkansports.com/keiba/news/)に日別の次走報、引退、追い切りが並ぶ。情報解析・AI利用目的の収集、蓄積等について媒体が示した条件を尊重する。[著作権方針](https://www.nikkansports.com/policy/copyright.html) |
+| スポニチ競馬Web | [一覧](https://keiba.sponichi.co.jp/news/)のGETフォームに馬名と日付欄がある。ピコローズで16候補、先頭は前週の各馬コメント。公開本文は読めた。旧研究のリンク限定は解除。第10条の私的使用と複写・転送・改変に関する記載を併せて扱う。[利用規約](https://keiba.sponichi.co.jp/terms_of_service) |
+| 日刊スポーツ | [競馬ニュース](https://www.nikkansports.com/keiba/news/)に日別の次走報、引退、追い切りが並ぶ。私的複製を認める記載と、AI利用等を目的とする収集・解析・蓄積の許諾に関する記載がある。個人の保存、LLMに渡して整理する段階、将来の学習を区別する。[著作権方針](https://www.nikkansports.com/policy/copyright.html) |
 | 東スポ競馬 | [一覧](https://tospo-keiba.jp/news)は研究HTTPでは200でメニュー中心、PCの表示後DOMは403。スポーツナビの配信元に東スポ競馬を確認した。直接の本文は未確認。[利用規約](https://tospo-keiba.jp/terms) |
 | スポーツ報知本紙 | [競馬タグ](https://hochi.news/tag/%E7%AB%B6%E9%A6%AC)に、馬トクと記事番号・見出しが共通する掲載がある。本紙サイトの会員規約には情報解析の条項がある。今回、掲載先URLを対応付け、本紙本文の蓄積は見送った。[本紙の規約](https://hochi.news/about/agreement/)・[馬トクの規約](https://umatoku.hochi.co.jp/info/kiyaku.html) |
-| サンスポ・ZBAT! | [競馬面](https://www.sanspo.com/race/)から[ジャパンC特集](https://www.sanspo.com/race/racecard/japan-cup/)へ進めた。情報解析・自動取得に関する規約があり、今回はリンクまで。配信先を制限の回避に使わない。[利用規約](https://www.sanspo.com/race/zbat_terms/) |
+| サンスポ・ZBAT! | [競馬面](https://www.sanspo.com/race/)から[ジャパンC特集](https://www.sanspo.com/race/racecard/japan-cup/)へ進めた。私的複製に触れる規定に加え、第12条(11)(12)は無許可の自動クエリや自動手段による取得・蓄積を制限する。ここでのサーバによる反復アクセスにはこの条項が関係する。[運営会社のウェブサイト利用規約](https://www.sankei-digital.co.jp/terms/)[利用規約](https://www.sanspo.com/race/zbat_terms/) |
 | ウマニティ | [日付別ニュース](https://umanity.jp/racedata/news_top.php)と[過去の年別特集](https://umanity.jp/racedata/graderace/0015/2021/race_news.php)。調教、枠順、前走談話、事後談話にたどれる。同じ公式発表にも編集部署名と他社配信があるので署名・発表元を読む。独自記事の一例はWeb閲覧で読めたが、研究HTTPでは202。本文保存は見送った。[利用規約](https://umanity.jp/agreement.php) |
-| 競馬ラボ・競馬のおはなし | [競馬ラボ](https://www.keibalab.jp/topics/backnumber.html)で過去一覧の2ページ目と騎手・コース分析の公開記事を確認。[競馬のおはなし](https://keibana.com/news/)も2ページ目へ移れる。本文保存を見送る既存設定があり、前者はコード、後者は私有方針に掲載されている。[競馬ラボ利用規約](https://www.keibalab.jp/info/agreement.html) |
+| 競馬ラボ・競馬のおはなし | [競馬ラボ](https://www.keibalab.jp/topics/backnumber.html)で過去一覧の2ページ目と騎手・コース分析の公開記事を確認。[競馬のおはなし](https://keibana.com/news/)も2ページ目へ移れる。旧コード・私有設定による一律リンク限定は解除した。公開部分を本人用に整理する。[競馬ラボ利用規約](https://www.keibalab.jp/info/agreement.html) |
 | 中日スポーツ | [競馬面](https://www.chunichi.co.jp/chuspo/race/horse)に月別と「次の11件」がある。調教・関係者談の公開部分を読めた。中日新聞プラスの情報解析条項と競馬面への適用範囲を区別し、今回は本文保存を見送った。[著作物利用](https://www.chunichi.co.jp/info/copyrights)・[会員規約](https://www.chunichi.co.jp/service/page/agreement/) |
 | netkeiba・JRA | [netkeiba](https://news.netkeiba.com/?pid=news_backnumber)の馬名検索、[JRA](https://www.jra.go.jp/news/202611/index.html)の月別ニュースは従来の導線。地方を広げる場合は[地方競馬全国協会](https://www.keiba.go.jp/)の公式発表と取材記事を区別する。 |
 
 保存方針・利用条件、ツール自身の拒否、実際のHTTP応答、公開本文の抽出漏れを区別する。独自のrobots事前拒否は撤廃済み。未発見や拒否を観測したら入口と日付を残し、ほかの取材を探せる。
+
+本人による公開記事の保存・閲覧を扱う。旧私有設定のスポーツブル、千葉テレビを含め、一般的な転載禁止を理由に私的な保存を除外しない。公開範囲・取得応答は実際の操作で扱う。文化庁は私的使用でのRAG等の複製と第30条との関係を説明している。[文化庁FAQ 6－⑲](https://www.bunka.go.jp/seisaku/bunka_gyosei/kibankyoka/faq/index.html)

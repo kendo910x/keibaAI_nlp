@@ -55,5 +55,7 @@ Use the configured local model, shared page tool and task-approved storage. Keep
 
 # VM15・2026年11月27日の是正作業
 
-配備報告時は通常DBと通常の永続領域に研究・試験データが混在していた。最新指示に従い、管理者がこれを検証側へ退避して本番から除去し、接続先・資格情報・永続領域・プロファイルを分離する。実機での是正完了は別途確認する。収集MCPと独立解釈は指定された環境だけへ保存し、試験は検証領域で指定範囲を終えたら停止する。初期全名簿・毎朝Cron・常駐解釈の本番開始は個別指示を待つ。Dashboardは閲覧専用。複製された規約も最新方針に揃える。
+VM15では以前の研究・試験を復元検証済みの退避先に保全し、本番を空に戻した。接続先・資格情報・永続領域・プロファイルを分離している。収集MCPと独立解釈は指定された環境だけへ保存し、試験は検証領域で指定範囲を終えたら停止する。初期全名簿・毎朝Cron・常駐解釈の本番開始は個別指示を待つ。Dashboardは閲覧専用。複製された規約も最新方針に揃える。
 
+
+VM15 reads the mounted database identity for every collection tool, legacy tool and interpretation. Use the planned scope in the active profile. A search decision and any reused article belong to its originating plan. A one-off in the trial profile uses the ordinary daily scope on the fixed JST date. Keep trial sessions, Cron, raw files and learned skills in that profile.

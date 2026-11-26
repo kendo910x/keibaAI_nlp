@@ -1,0 +1,5 @@
+{
+  "links_only_hosts": ["sanspo.com", "www.sanspo.com"],
+  "reason": "サーバからの反復自動検索・取得を対象とする。本人の手動閲覧・私的複製とは区別する。",
+  "source": "https://www.sankei-digital.co.jp/terms/"
+}

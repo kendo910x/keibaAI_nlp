@@ -57,7 +57,7 @@ def read(group, ident):
 
 def links_only(url):
     hosts = set()
-    policy = ROOT / "collection-policy.json"
+    policy = (Path("/opt/nlp-research") if SERVER else ROOT) / "collection-policy.json"
     if policy.is_file():
         hosts.update(json.loads(policy.read_text(encoding="utf-8"))["links_only_hosts"])
     return urlsplit(url).hostname in hosts

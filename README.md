@@ -9,7 +9,7 @@
 [最新の実行指示書：2パターン試行とDashboard仕様検討](docs/instructions/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_instruction.md)  
 [先行する指示書：本番清掃・検証領域分離・私的利用方針](docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)
 
-直前の[配備報告](docs/reports/2026-11/2026-11-27_nlp_server_runtime_dashboard_report.md)では、通常DBに研究・試験由来の1,303 URL・1,304版と旧56記事が入っています。この文書更新は実機での退避・削除を完了した報告ではありません。現物を保全して検証側へ移し、本番の利用データを空にするのが次の作業です。
+VM15では旧研究の1,303 URL・1,304版と旧56記事を私有バックアップへ復元検証済みです。本番DBを空にしてから、別DB・別資格情報・別Hermesで今回の2試行を開始しました。[検証用資料庫](http://192.168.0.14:8787/) ・ [本番の開始待ち画面](http://192.168.0.14:8786/)
 
 | 項目 | 今回整える状態 |
 |---|---|
@@ -23,7 +23,7 @@
 分類・収集は9割がた役立てば十分という方針を維持します。初期データのLocal LLM解釈に数日〜1週間程度かかっても構いません。収集・解釈・閲覧はサーバだけで完結させ、日常的でない保守はCodexへの依頼とCLIで行います。
 
 - Skill：[検索](skills/keiba-search/SKILL.md)・[記事解釈](skills/keiba-interpret/SKILL.md)・[統括](skills/keiba-coordinate/SKILL.md)。
-- 現行配置の説明：[VM15運用手順](infra/nlp-vm/runtime/README.md)。最新の分離指示に沿って修正する対象です。
+- 現行配置の説明：[VM15運用手順](infra/nlp-vm/runtime/README.md)。本番と検証の保存先・閲覧先を記載しています。
 - 過去の[カバー率報告](docs/reports/2026-11/2026-11-27_nlp_coverage_report.md)と[段階3C引き継ぎ](docs/handoffs/2026-11/2026-11-26_stage3c_redesign_handover.md)は履歴として残します。
 
 ## PoC: 日本語Embedding実行環境（CPU）

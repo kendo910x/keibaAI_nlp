@@ -131,6 +131,8 @@ def import_directory(root, origin):
         ):
             total = 0
             for p in sorted((root / family).glob("*")):
+                if family == "rosters" and p.name == "history-jra.json.gz":
+                    continue
                 if p.suffix not in (".json", ".gz"):
                     continue
                 raw = (

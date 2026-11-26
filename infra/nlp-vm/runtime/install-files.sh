@@ -28,6 +28,7 @@ done
 infra="$root/infra/nlp-vm"
 install -m 0644 "$root"/poc/search_research/*.py "$infra"/runtime/*.py "$infra"/hermes/store.py "$infra"/runtime/dashboard.css "$base/app/"
 install -m 0644 "$infra/runtime/"*.prompt.txt "$base/work/"
+install -m 0644 "$infra/runtime/collection-policy.json" "$base/work/"
 install -m 0644 "$root/AGENTS.md" "$base/work/PROJECT.md"
 install -m 0644 "$infra/hermes/AGENTS.md" "$base/work/AGENTS.md"
 for home in /srv/nlp/hermes /srv/nlp/trial/hermes; do

@@ -10,6 +10,7 @@ import uuid
 from email.utils import parsedate_to_datetime
 from functools import lru_cache
 from ipaddress import ip_address
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -107,6 +108,8 @@ def record_limit(url, status, header):
 def get_html(url):
     with httpx.Client(headers=HEADERS, timeout=20) as client:
         for _ in range(6):
+            if links_only(url):
+                raise Unavailable("metadata_only")
             pace(url)
             r = client.get(url)
             if r.is_redirect:
@@ -357,12 +360,18 @@ def daily_horse(horse):
     return {**horse, "name": name, "display_name": horse.get("display_name", display)}
 
 
+def history_roster_file():
+    return (Path("/opt/nlp-research/inputs") if SERVER else ROOT / "rosters") / "history-jra.json.gz"
+
+
 def seeds(roster: str, offset: int = 0, limit: int = 12, name: str = "", year: str = "") -> dict:
     """Read a published or historical roster. Filter by a name fragment or activity year."""
     if not re.fullmatch(r"[a-z0-9-]+", roster) or offset < 0 or not 1 <= limit <= 100:
         raise ValueError("Use a roster name, nonnegative offset and limit of 1..100")
     p = ROOT / "rosters" / (roster + ".json")
-    if re.fullmatch(r"[a-f0-9]{32}", roster) and (ROOT / "roster_pages" / p.name).is_file():
+    if roster == "history-jra" and SERVER:
+        data = json.loads(gzip.decompress(history_roster_file().read_bytes()))
+    elif re.fullmatch(r"[a-f0-9]{32}", roster) and (ROOT / "roster_pages" / p.name).is_file():
         data = read("roster_pages", roster)
     else:
         raw = p.read_bytes() if p.is_file() else gzip.decompress(p.with_suffix(".json.gz").read_bytes())

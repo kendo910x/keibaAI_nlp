@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 import discovery
 from corpus import connect
 from research import ROOT, digest, interpret, interpretation_config, read
-from routes import capture_url, collect
+from routes import capture_url, collect, history_roster_file
 
 JST = ZoneInfo("Asia/Tokyo")
 TERMINAL = ("done", "partial", "failed")
@@ -62,7 +62,7 @@ def status(ident):
 
 
 def history(limit=None, year=None, source="net", media=(), media_only=False):
-    content = (ROOT / "rosters/history-jra.json.gz").read_bytes()
+    content = history_roster_file().read_bytes()
     data = json.loads(gzip.decompress(content))
     horses = [h for h in data["horses"] if not year or year in h["years"]]
     if limit is not None:

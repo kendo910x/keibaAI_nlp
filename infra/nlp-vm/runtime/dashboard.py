@@ -304,8 +304,12 @@ def home(c):
             if pending
             else "本運用の設定あり"
         )
-        + '<span class="muted">本運用の次回予定　'
-        + ESC(stamp(nxt) if nxt else "なし")
+        + '<span class="muted">'
+        + (
+            "有限試行の進捗"
+            if trial()
+            else "本運用の次回予定　" + ESC(stamp(nxt) if nxt else "なし")
+        )
         + "</span></p>"
         + (trial_links(c) if trial() else "")
         + "<h2>"
@@ -327,7 +331,29 @@ def home(c):
                     ESC(r["detail"]) + " <small>" + stamp(r["checked_at"]) + "</small>",
                 )
             )
-    h += '<div class="blocks">' + panel("定期実行", rows(hh))
+    if trial():
+        schedule_file = Path("/run/hermes-cron/jobs.json")
+        native = (
+            json.loads(schedule_file.read_bytes())["jobs"]
+            if schedule_file.exists()
+            else []
+        )
+        hh = [
+            (
+                j.get("name", "単発起動"),
+                ESC(
+                    "単発起動終了"
+                    if j.get("repeat", {}).get("completed")
+                    else "予定あり"
+                    if j.get("enabled")
+                    else "無効"
+                ),
+            )
+            for j in native
+        ]
+    h += '<div class="blocks">' + panel(
+        "検証用Hermesの予定" if trial() else "定期実行", rows(hh) if hh else "登録なし"
+    )
     ch = [
         (
             "検証DB" if trial() else "本番DB",
