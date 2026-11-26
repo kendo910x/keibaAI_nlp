@@ -31,17 +31,25 @@ install -m 0644 "$infra/runtime/"*.prompt.txt "$base/work/"
 install -m 0644 "$infra/runtime/collection-policy.json" "$base/work/"
 install -m 0644 "$root/AGENTS.md" "$base/work/PROJECT.md"
 install -m 0644 "$infra/hermes/AGENTS.md" "$base/work/AGENTS.md"
-for home in /srv/nlp/hermes /srv/nlp/trial/hermes; do
-    [[ -d "$home" ]] || continue
-for name in keiba-search keiba-coordinate keiba-interpret; do
-    dest="$home/skills/$name"
-    install -d -o 10000 -g 10000 -m 0755 "$dest" "$dest/references"
-    install -o 10000 -g 10000 -m 0644 "$root/skills/$name/SKILL.md" "$dest/"
-    if [[ -d "$root/skills/$name/references" ]]; then
-        install -o 10000 -g 10000 -m 0644 "$root/skills/$name"/references/*.md "$dest/references/"
-    fi
-    install -o 10000 -g 10000 -m 0644 "$root/AGENTS.md" "$dest/references/work-rules.md"
-done
+previous=$(cat "$base/RELEASE" 2>/dev/null || true)
+for profile_home in /srv/nlp/hermes /srv/nlp/trial/hermes; do
+    [[ -d "$profile_home" ]] || continue
+    install -d -o 10000 -g 10000 -m 0755 "$profile_home/skills"
+    for name in keiba-search keiba-coordinate keiba-interpret; do
+        dest="$profile_home/skills/$name"
+        install -d -o 10000 -g 10000 -m 0755 "$dest" "$dest/references"
+        for src in "$root/skills/$name/SKILL.md" "$root/skills/$name"/references/*.md; do
+            [[ -f "$src" ]] || continue
+            relative=${src#"$root/skills/$name/"}
+            old="$base/releases/$previous/skills/$name/$relative"
+            if [[ -f "$dest/$relative" && -f "$old" ]] && ! cmp -s "$dest/$relative" "$old"; then
+                printf 'Preserved profile edit: %s\n' "$dest/$relative"
+                continue
+            fi
+            install -o 10000 -g 10000 -m 0644 "$src" "$dest/$relative"
+        done
+        install -o 10000 -g 10000 -m 0644 "$root/AGENTS.md" "$dest/references/work-rules.md"
+    done
 done
 install -m 0644 "$infra/hermes/config.yaml" /srv/nlp/hermes-runtime/config.yaml
 install -m 0644 "$infra/quadlet/nlp-hermes.container" "$infra/quadlet/nlp-dashboard.container" /etc/containers/systemd/

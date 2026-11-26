@@ -724,7 +724,10 @@ def archive(c, q):
         targets = list(dict.fromkeys(item_name(x) for x in ii["items"])) if ii else []
         h += (
             "<li><div><h3>"
-            + anchor("/article/" + r["id"], r["title"] or r["url_key"])
+            + anchor(
+                linkto("/article/" + r["id"], {"back": linkto("/articles", q)}),
+                r["title"] or r["url_key"],
+            )
             + '</h3><div class="meta">'
             + ESC(site(r["host"]))
             + "　掲載・更新 "
@@ -791,7 +794,10 @@ def archive(c, q):
     )
 
 
-def detail(c, ident):
+def detail(c, ident, back="/articles"):
+    parsed = urlsplit(back)
+    if parsed.scheme or parsed.netloc or parsed.path != "/articles":
+        back = "/articles"
     cap = c.execute("SELECT * FROM captures WHERE id=%s", (ident,)).fetchone()
     if not cap:
         raise LookupError
@@ -808,7 +814,7 @@ def detail(c, ident):
     ).fetchall()
     h = (
         "<p>"
-        + anchor("/articles", "← 記事一覧")
+        + anchor(back, "← 記事一覧")
         + "".join(
             "　"
             + anchor(linkto("/articles", {"plan": str(m["id"])}), pattern(m["kind"]))
@@ -895,7 +901,7 @@ def detail(c, ident):
                     + ESC(item["text"])
                     + "</p></div>"
                 )
-        h += "</section>"
+        h += anchor("#source", "保存した原文へ戻る") + "</section>"
     else:
         h += panel("本文の保存状態", "URLと取得時の状態を保存。本文は未取得。")
     versions = c.execute(
@@ -1092,7 +1098,9 @@ class Handler(BaseHTTPRequestHandler):
                     elif re.fullmatch("/legacy/" + UUID, u.path):
                         out = legacy(c, u.path.rsplit("/", 1)[1])
                     elif re.fullmatch(r"/article/[a-f0-9]{32}", u.path):
-                        out = detail(c, u.path.rsplit("/", 1)[1])
+                        out = detail(
+                            c, u.path.rsplit("/", 1)[1], q.get("back", "/articles")
+                        )
                     elif re.fullmatch("/run/" + UUID, u.path):
                         out = run_detail(c, u.path.rsplit("/", 1)[1], q)
                     else:
