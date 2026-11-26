@@ -50,6 +50,14 @@ def read(group, ident):
     return json.loads((ROOT / group / (ident + ".json")).read_text(encoding="utf-8"))
 
 
+def links_only(url):
+    hosts = {"keiba.sponichi.co.jp", "www.keibalab.jp"}
+    policy = ROOT / "collection-policy.json"
+    if policy.is_file():
+        hosts.update(json.loads(policy.read_text(encoding="utf-8"))["links_only_hosts"])
+    return urlsplit(url).hostname in hosts
+
+
 async def shared(tool, arguments):
     async with streamablehttp_client(SHARED) as (reader, writer, _):
         async with ClientSession(reader, writer) as session:
@@ -84,6 +92,8 @@ async def check_access(url):
     parts = urlsplit(url)
     if parts.scheme not in ("https", "http") or not parts.hostname:
         return "unsupported_url"
+    if links_only(url):
+        return "metadata_only"
     robots = parts._replace(path="/robots.txt", query="", fragment="").geturl()
     async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
         reply = await client.get(robots)
