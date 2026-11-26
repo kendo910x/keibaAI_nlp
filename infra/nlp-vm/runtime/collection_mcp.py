@@ -13,9 +13,12 @@ from discovery import MEDIA, card, horse_route, media_route
 from corpus import connect
 from jobs import JST, add_targets, daily, history, run, status
 from profile_db import trial
+from plan_sources import PlanSession
 from research import ROOT, capture, interpret as independent, read, search
 from routes import capture_url, collect, excerpt, listing, roster_page, seeds
 from run import in_worker
+
+session = PlanSession()
 
 
 def horse_news(name: str, year: str = "", source: str = "net", limit: int = 3) -> dict:
@@ -46,6 +49,7 @@ def history_prepare(limit: int, source: str = "net") -> dict:
     if trial() and limit != trial_request()["history_limit"]:
         raise ValueError("Use the designated trial roster size")
     ident = history(limit, source=source)
+    session.plan_id = ident
     with connect() as c:
         rows = c.execute(
             "SELECT target FROM work_items WHERE plan_id=%s AND target ? 'horse_id' ORDER BY position LIMIT 40",
@@ -77,13 +81,12 @@ def daily_prepare(sources: list[str], review: bool = False) -> dict:
             raise ValueError(
                 "The production morning schedule is not registered or enabled"
             )
-    return status(
-        daily(
-            day,
-            "review" if review else "operation",
-            sources,
-        )
+    session.plan_id = daily(
+        day,
+        "review" if review else "operation",
+        sources,
     )
+    return status(session.plan_id)
 
 
 def plan_step(plan_id: str, count: int = 1) -> dict:
@@ -217,6 +220,8 @@ if __name__ == "__main__":
             roster_page,
             interpret,
         ):
+            if fn in (horse_news, media_news, capture, collect, capture_url):
+                fn = session.track(fn)
             server.tool()(
                 fn if inspect.iscoroutinefunction(fn) else in_worker(fn, pool)
             )
