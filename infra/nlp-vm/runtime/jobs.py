@@ -380,7 +380,7 @@ def add_targets(c, p, targets):
     names = {
         r["name"]
         for r in c.execute(
-            "SELECT target->>'name' name FROM work_items WHERE plan_id=%s AND target->>'type'='horse'",
+            "SELECT target->>'name' name FROM work_items WHERE plan_id=%s AND target->>'type'='horse' AND NOT (target ? 'decision')",
             (ident,),
         )
     }
@@ -537,6 +537,7 @@ def run(ident, steps=None, respect_stop=False):
                     "ok",
                     "partial",
                     "no_matching_links",
+                    "metadata_only",
                 )
                 if bad and not result.get("failed"):
                     result["failed"] = 1

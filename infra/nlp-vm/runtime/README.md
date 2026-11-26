@@ -39,7 +39,7 @@ du -sh /srv/nlp/runtime/data /srv/nlp/hermes
 
 ## 過去名簿
 
-`history` は既存の `/opt/nlp-research/inputs/history-jra.json.gz` から馬・活動年・指定媒体の対象を固定する。SHA-256、対象馬数、期間は計画に保存する。同じ名簿・条件の作成は同じIDを返す。既定は馬名の媒体内検索とラジオNIKKEIの月別一覧。月別一覧の続きは観測IDとoffsetを使う。本文がある既知URLは再利用し、必要な再訪は `capture_url(revisit=true)`。更新版は同じURLに追加する。
+`history` は既存の `/opt/nlp-research/inputs/history-jra.json.gz` から馬・活動年・指定媒体の対象を固定する。SHA-256、対象馬数、期間は計画に保存する。同じ名簿・条件の作成は同じIDを返す。既定は馬名の媒体内検索とラジオNIKKEIの月別一覧。月別一覧の続きは観測IDとoffsetを使う。本文がある既知URLは再利用し、必要な再訪は `capture_url(revisit=true)`。更新版は同じURLに追加する。 通常の探索判断は、Hermesの単発起動に検索・統括Skillと history.prompt.txt を渡して得る。指定頭数を伝えると history_prepare が共通の計画を作り、Hermesが一般検索や追加媒体を選ぶ。plan_step の続きは同じIDで kt run を使う。次の kt history は機械的な計画部品のCLIで、単独でHermesの探索判断を行ったことにはならない。
 
 ```bash
 # 開始指示後。IDの作成と実行は別操作。

@@ -42,12 +42,21 @@ def trial_request():
     return json.loads(Path("/run/keiba/trial.json").read_text())
 
 
-def history_prepare(limit: int, source: str = "net") -> dict:
+def history_prepare(
+    limit: int | None = None, source: str = "net", full_roster: bool = False
+) -> dict:
     """Open the authorized historical roster prefix. Return the real names and active years."""
-    if limit < 1 or source not in ("net", "blog"):
+    if trial():
+        designated = trial_request()["history_limit"]
+        if full_roster or limit not in (None, designated):
+            raise ValueError("Use the designated trial roster size")
+        limit = designated
+    if (
+        (limit is None) != full_roster
+        or (limit is not None and limit < 1)
+        or source not in ("net", "blog")
+    ):
         raise ValueError("Choose a positive roster size and a supported source")
-    if trial() and limit != trial_request()["history_limit"]:
-        raise ValueError("Use the designated trial roster size")
     ident = history(limit, source=source)
     session.plan_id = ident
     with connect() as c:
