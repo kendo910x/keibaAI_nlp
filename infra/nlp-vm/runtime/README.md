@@ -91,6 +91,8 @@ podman exec -i -u postgres nlp-postgres pg_restore --list < "$dest/corpus.dump" 
 
 ## 再配備
 
+WindowsのGitから配備アーカイブを作る場合は `git -c core.autocrlf=false -c core.eol=lf archive` を用いる。VM15上のシェル・設定・SkillにGitのblobと同じ改行を渡せる。
+
 VM15の既存Hermes基盤・PostgreSQLと `nlp_app` を使用する。初回はDB変更前バックアップを取り、閲覧ロールをLOGIN権限のみで作り、`default_transaction_read_only=on` とする。パスワードはVM15内で生成し、`/srv/nlp/hermes-private/nlp_viewer`（10000:10000、0400）に置く。HBAの許可元はVM15自身の `192.168.0.14/32`。[HBA](../db/pg_hba.conf)・[通常DBの追加スキーマと権限](../db/migrations/002_collection_runtime.sql)
 
 研究プロファイルを含む旧コンテナを退避してから、`/srv/nlp/runtime/research` 配下へ両方を復元してbindする。元の `keiba-routes-20261126/data` を私有の `runtime/data` にコピーし、初回だけ `corpus.import_directory(..., "research-20261126")` を使う。原文と解釈は元ID、進捗は観測IDで取り込む。稼働中のデータに古い名簿コピーを上書きしない。
