@@ -47,8 +47,16 @@ def history_prepare(limit: int, source: str = "net") -> dict:
         raise ValueError("Use the designated trial roster size")
     ident = history(limit, source=source)
     with connect() as c:
-        rows = c.execute("SELECT target FROM work_items WHERE plan_id=%s AND target ? 'horse_id' ORDER BY position LIMIT 40", (ident,))
-        return {"plan_id": ident, "horses": [{k: r["target"][k] for k in ("name","first","last")} for r in rows]}
+        rows = c.execute(
+            "SELECT target FROM work_items WHERE plan_id=%s AND target ? 'horse_id' ORDER BY position LIMIT 40",
+            (ident,),
+        )
+        return {
+            "plan_id": ident,
+            "horses": [
+                {k: r["target"][k] for k in ("name", "first", "last")} for r in rows
+            ],
+        }
 
 
 def daily_prepare(sources: list[str], review: bool = False) -> dict:
@@ -57,7 +65,9 @@ def daily_prepare(sources: list[str], review: bool = False) -> dict:
     if trial():
         day = trial_request()["day"]
         if review or set(sources) != set(MEDIA):
-            raise ValueError("The daily trial uses normal expansion and all four news lists")
+            raise ValueError(
+                "The daily trial uses normal expansion and all four news lists"
+            )
     elif not review:
         jobfile = Path("/opt/data/cron/jobs.json")
         jobs = json.loads(jobfile.read_text())["jobs"] if jobfile.exists() else []
@@ -90,40 +100,68 @@ async def plan_search(plan_id: str, subject: str, query: str) -> dict:
         raise ValueError("Choose a collection plan")
     result = await search(subject, query, 6)
     with connect() as c:
-        c.execute("INSERT INTO agent_searches VALUES (%s,%s,%s,%s)", (plan_id,result["search_id"],subject,query))
+        c.execute(
+            "INSERT INTO agent_searches VALUES (%s,%s,%s,%s)",
+            (plan_id, result["search_id"], subject, query),
+        )
     return result
 
 
-def plan_follow(plan_id: str, subject: str, reason: str, source: str, search_id: str = "",
-                number: int = 1, year: str = "") -> dict:
+def plan_follow(
+    plan_id: str,
+    subject: str,
+    reason: str,
+    source: str,
+    search_id: str = "",
+    number: int = 1,
+    year: str = "",
+) -> dict:
     """Queue the chosen web result (source=search, 1-based number), or another site search (net/blog) for this subject."""
     if not subject.strip() or not reason.strip():
         raise ValueError("Include the real horse/race and the reason for the route")
     with connect() as c:
-        p = c.execute("SELECT * FROM plans WHERE id=%s FOR UPDATE",(plan_id,)).fetchone()
-        if not p or p["kind"] not in ("history","daily") or p["stop_requested"]:
+        p = c.execute(
+            "SELECT * FROM plans WHERE id=%s FOR UPDATE", (plan_id,)
+        ).fetchone()
+        if not p or p["kind"] not in ("history", "daily") or p["stop_requested"]:
             raise ValueError("Choose an active collection plan")
         if source == "search":
-            if not c.execute("SELECT 1 FROM agent_searches WHERE plan_id=%s AND search_id=%s",(plan_id,search_id)).fetchone():
+            if not c.execute(
+                "SELECT 1 FROM agent_searches WHERE plan_id=%s AND search_id=%s",
+                (plan_id, search_id),
+            ).fetchone():
                 raise ValueError("Choose this plan's search observation")
             hits = read("searches", search_id)["results"]
             if not 1 <= number <= len(hits):
                 raise ValueError("Choose a returned result number")
-            target = {"type":"selected_article","name":subject,"source":source,"search_id":search_id,**hits[number-1]}
-        elif source in ("net","blog"):
-            target = {"type":"horse","name":subject,"source":source,"limit":3}
+            target = {
+                "type": "selected_article",
+                "name": subject,
+                "source": source,
+                "search_id": search_id,
+                **hits[number - 1],
+            }
+        elif source in ("net", "blog"):
+            target = {"type": "horse", "name": subject, "source": source, "limit": 3}
             if year:
                 if len(year) != 4 or not year.isdecimal():
                     raise ValueError("Use a four-digit activity year")
-                target.update(first=year+"0101",last=year+"1231")
+                target.update(first=year + "0101", last=year + "1231")
         else:
             raise ValueError("Choose search, net or blog")
         target["decision"] = reason
         from psycopg.types.json import Jsonb
-        if not c.execute("SELECT 1 FROM work_items WHERE plan_id=%s AND target=%s", (plan_id, Jsonb(target))).fetchone():
-            add_targets(c,p,[target])
-            c.execute("UPDATE plans SET state=CASE WHEN state='running' THEN state ELSE 'queued' END,ended_at=NULL,updated_at=now() WHERE id=%s",(plan_id,))
-    return {"plan_id":plan_id,"subject":subject,"route":source,"queued":True}
+
+        if not c.execute(
+            "SELECT 1 FROM work_items WHERE plan_id=%s AND target=%s",
+            (plan_id, Jsonb(target)),
+        ).fetchone():
+            add_targets(c, p, [target])
+            c.execute(
+                "UPDATE plans SET state=CASE WHEN state='running' THEN state ELSE 'queued' END,ended_at=NULL,updated_at=now() WHERE id=%s",
+                (plan_id,),
+            )
+    return {"plan_id": plan_id, "subject": subject, "route": source, "queued": True}
 
 
 def plan_status(plan_id: str) -> dict:

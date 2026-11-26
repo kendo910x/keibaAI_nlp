@@ -15,6 +15,12 @@ for name in keiba-search keiba-coordinate keiba-interpret; do
         cp -a "/srv/nlp/hermes/skills/$name" "$snapshot/"
     fi
 done
+if [[ -d /srv/nlp/trial/hermes/skills ]]; then
+    install -d -m 0700 "$snapshot/trial-skills"
+    for dir in /srv/nlp/trial/hermes/skills/keiba-*; do
+        [[ ! -d "$dir" ]] || cp -a "$dir" "$snapshot/trial-skills/"
+    done
+fi
 cp -p /srv/nlp/hermes-runtime/config.yaml "$snapshot/"
 for unit in nlp-dashboard.container nlp-hermes.container; do
     if [[ -f /etc/containers/systemd/$unit ]]; then cp -p "/etc/containers/systemd/$unit" "$snapshot/"; fi

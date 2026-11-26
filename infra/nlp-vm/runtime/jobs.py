@@ -268,8 +268,13 @@ def execute(target, p):
     elif typ == "selected_article":
         hit = capture_url(target["name"], target["url"], target["title"])
         good = hit["status"] in ("ok", "partial")
-        r = {"route_status": hit["status"], "hits": [hit], "saved": int(good and not hit["known"]),
-             "known": int(hit["known"]), "failed": int(not good and hit["status"] != "metadata_only")}
+        r = {
+            "route_status": hit["status"],
+            "hits": [hit],
+            "saved": int(good and not hit["known"]),
+            "known": int(hit["known"]),
+            "failed": int(not good and hit["status"] != "metadata_only"),
+        }
     elif typ == "media":
         r = discovery.media_route(target)
         if (
@@ -346,7 +351,7 @@ def execute(target, p):
             "url": listing["url"],
         }
     elif typ == "card":
-        r = discovery.card(target, p["scope"])
+        r = discovery.card(target, p["scope"], p["created_at"])
         for name in r["added"]:
             more.append(
                 {
@@ -473,8 +478,15 @@ def run(ident, steps=None, respect_stop=False):
             stop = c.execute(
                 "SELECT stop_requested FROM plans WHERE id=%s", (ident,)
             ).fetchone()["stop_requested"]
+            priority = "position"
+            if p["kind"] == "interpret" and p["scope"] == "finite":
+                # Alternate source plans while both have pending versions, including late arrivals.
+                priority = """(SELECT count(*) FROM work_items done WHERE done.plan_id=w.plan_id
+                    AND done.state IN ('done','failed','partial') AND done.target->>'origin'=w.target->>'origin'), position"""
             item = c.execute(
-                "SELECT * FROM work_items WHERE plan_id=%s AND state IN ('queued','working') ORDER BY position LIMIT 1",
+                "SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working') ORDER BY "
+                + priority
+                + " LIMIT 1",
                 (ident,),
             ).fetchone()
             if not item:
@@ -503,7 +515,8 @@ def run(ident, steps=None, respect_stop=False):
                 )
                 break
             if (
-                p["kind"] in ("history", "interpret") and p["scope"] != "finite"
+                p["kind"] in ("history", "interpret")
+                and p["scope"] != "finite"
                 and c.execute(
                     """SELECT 1 FROM plans d WHERE kind='daily' AND state='running' AND EXISTS
                     (SELECT FROM pg_locks l WHERE l.locktype='advisory' AND l.objid=(hashtextextended(d.id::text,0)&4294967295)::oid) LIMIT 1"""

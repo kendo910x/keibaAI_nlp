@@ -256,7 +256,7 @@ def calendar(day):
     return {"url": url, "races": races, "dates": dates}
 
 
-def card(target, scope="lookup"):
+def card(target, scope="lookup", previous_before=None):
     key, stage = target["key"], target["stage"]
     if not re.fullmatch(r"\d{12}", key):
         raise ValueError("invalid race key")
@@ -274,8 +274,9 @@ def card(target, scope="lookup"):
         prev = c.execute(
             """SELECT data FROM observations WHERE family='roster_pages' AND data->>'roster'=%s
                        AND data->>'selector'=%s AND data->>'scope'=%s AND jsonb_array_length(data->'horses')>0
+                       AND (%s::timestamptz IS NULL OR (data->>'observed_at')::timestamptz < %s)
                        ORDER BY data->>'observed_at' DESC LIMIT 1""",
-            (roster, selector, scope),
+            (roster, selector, scope, previous_before, previous_before),
         ).fetchone()
     o = roster_page(
         roster,

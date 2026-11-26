@@ -42,7 +42,8 @@ ST = {
     "interpret": "独立解釈",
     "review": "限定試験",
     "bounded": "有限の指定範囲",
-    "operation": "本運用",
+    "operation": "通常範囲",
+    "finite": "指定した収集分",
     "server-survey": "サーバ標本調査",
     "net": "netkeiba",
     "blog": "山口吉野",
@@ -94,7 +95,7 @@ def anchor(href, title):
 
 def external(href):
     return (
-        anchor(href, "配信元の記事を開く ↗")
+        anchor(href, "掲載サイトの元記事を開く ↗")
         if urlsplit(href).scheme in ("http", "https")
         else ESC(href)
     )
@@ -146,6 +147,7 @@ def linkto(path, query):
 
 
 def layout(tab, title, body):
+    env = "検証用" if trial() else "本番"
     nav = "".join(
         f'<a href="{href}" '
         + ('aria-current="page"' if tab == key else "")
@@ -164,6 +166,9 @@ def layout(tab, title, body):
         + ESC(title)
         + ' | 競馬資料庫</title><link rel="stylesheet" href="/dashboard.css">'
         '<header><div><a class="brand" href="/"><span class="mark" aria-hidden="true">馬</span>競馬資料庫</a><nav>'
+        + '<strong class="environment">'
+        + env
+        + "</strong>"
         + nav
         + "</nav></div></header><main><h1>"
         + ESC(title)
@@ -185,7 +190,7 @@ def metrics(t):
         ("本文のあるURL", t["urls"]),
         ("保存本文の版", t["versions"]),
         ("解釈済みの版", t["interpreted"]),
-        ("解釈待ちの版", t["versions"] - t["interpreted"]),
+        ("成功した解釈がまだない版", t["versions"] - t["interpreted"]),
     ]
     return (
         '<div class="metrics">'
@@ -292,10 +297,20 @@ def home(c):
     clock = stamp(datetime.now(JST))
     h = (
         '<p class="statusline">'
-        + badge("実装済み・運用開始待ち" if pending else "本運用の設定あり")
+        + badge(
+            "検証用資料庫"
+            if trial()
+            else "実装済み・運用開始待ち"
+            if pending
+            else "本運用の設定あり"
+        )
         + '<span class="muted">本運用の次回予定　'
         + ESC(stamp(nxt) if nxt else "なし")
         + "</span></p>"
+        + (trial_links(c) if trial() else "")
+        + "<h2>"
+        + ("今回のテストDB全体" if trial() else "本番DB全体")
+        + "</h2>"
         + metrics(t)
     )
     hh = [
@@ -313,7 +328,12 @@ def home(c):
                 )
             )
     h += '<div class="blocks">' + panel("定期実行", rows(hh))
-    ch = [("通常DB", badge("接続確認") + " <small>" + clock + "</small>")]
+    ch = [
+        (
+            "検証DB" if trial() else "本番DB",
+            badge("接続確認") + " <small>" + clock + "</small>",
+        )
+    ]
     for r in health:
         if r["name"] in ("ticker", "interpreter", "database"):
             continue
@@ -382,14 +402,13 @@ def home(c):
     roster = c.execute(
         """SELECT input->>'horses' horses,id,label,state FROM plans WHERE kind='history' ORDER BY updated_at DESC LIMIT 4"""
     ).fetchall()
-    roster_size = c.execute(
-        "SELECT horses FROM roster_sizes WHERE id='history-jra'"
-    ).fetchone()
+    roster_size = c.execute("""SELECT (input->>'roster_size')::int horses FROM plans
+        WHERE kind='history' AND input ? 'roster_size' ORDER BY created_at DESC LIMIT 1""").fetchone()
     h += panel(
         "過去名簿の探索",
         (
             "<p>元のJRA履歴名簿　"
-            + (f"{roster_size['horses']:,}頭" if roster_size else "未取込")
+            + (f"{roster_size['horses']:,}頭" if roster_size else "対象計画の登録待ち")
             + "</p>"
             + rows(
                 [
@@ -415,6 +434,96 @@ def item_name(item):
     )
 
 
+def pattern(kind):
+    return "A　過去馬名検索" if kind == "history" else "B　日次検索"
+
+
+def progress_label(state):
+    return {
+        "ok": "解釈済み",
+        "queued": "解釈待ち",
+        "working": "処理中",
+        "failed": "解釈失敗",
+    }[state]
+
+
+def trial_links(c):
+    plans = c.execute("""SELECT DISTINCT ON (kind) id,kind FROM plans WHERE kind IN ('history','daily')
+                         ORDER BY kind,created_at DESC""").fetchall()
+    bykind = {p["kind"]: str(p["id"]) for p in plans}
+    cards = ""
+    for kind in ("history", "daily"):
+        ident = bykind.get(kind)
+        body = (
+            (
+                anchor(linkto("/articles", {"plan": ident}), "取得した記事")
+                + "　"
+                + anchor("/run/" + ident, "対象と進捗")
+            )
+            if ident
+            else "開始待ち"
+        )
+        cards += panel(pattern(kind), body)
+    return '<div class="blocks">' + cards + "</div>"
+
+
+def source_summary(c, ident, kind):
+    stats = c.execute(
+        """WITH seen AS (SELECT DISTINCT c.url_key,c.version_id FROM plan_hits h
+                        JOIN captures c ON c.id=h.capture_id WHERE h.plan_id=%s AND c.version_id IS NOT NULL)
+        SELECT count(DISTINCT url_key) urls,count(DISTINCT version_id) versions,
+        count(DISTINCT version_id) FILTER(WHERE p.state='ok') ok,
+        count(DISTINCT version_id) FILTER(WHERE p.state='queued') queued,
+        count(DISTINCT version_id) FILTER(WHERE p.state='working') working,
+        count(DISTINCT version_id) FILTER(WHERE p.state='failed') failed
+        FROM seen LEFT JOIN version_progress p ON p.id=seen.version_id""",
+        (ident,),
+    ).fetchone()
+    left = c.execute(
+        "SELECT count(*) n FROM work_items WHERE plan_id=%s AND state IN ('queued','working')",
+        (ident,),
+    ).fetchone()["n"]
+    marks = "　".join(
+        f"{progress_label(k)} {stats[k]} 版"
+        for k in ("ok", "queued", "working", "failed")
+    )
+    picks = c.execute(
+        """SELECT DISTINCT ON (term) term FROM (
+        SELECT coalesce(nullif(target->>'name',''),nullif(target->>'race','')) AS term FROM work_items
+        WHERE plan_id=%s) x WHERE term IS NOT NULL ORDER BY term LIMIT 12""",
+        (ident,),
+    ).fetchall()
+    links = "　".join(
+        anchor(linkto("/articles", {"plan": ident, "q": r["term"]}), r["term"])
+        for r in picks
+    )
+    examples = c.execute(
+        """SELECT DISTINCT ON (c.version_id) c.version_id,c.id,c.title,i.items
+        FROM plan_hits h JOIN captures c ON c.id=h.capture_id JOIN interpretations i ON i.version_id=c.version_id
+        WHERE h.plan_id=%s AND i.status='ok' AND jsonb_array_length(i.items)>0 ORDER BY c.version_id,c.observed_at LIMIT 3""",
+        (ident,),
+    ).fetchall()
+    examples_html = "".join(
+        "<li>"
+        + anchor("/article/" + e["id"] + "#interpretation", e["title"] or "見出し不明")
+        + "　"
+        + ESC(item_name(e["items"][0]))
+        + "</li>"
+        for e in examples
+    )
+    return panel(
+        pattern(kind),
+        anchor(linkto("/articles", {"plan": ident}), "この実行の記事を読む")
+        + f"<p>本文 {stats['urls']} URL ／ {stats['versions']} 版　収集の残り {left} 対象</p><p>{marks}</p>"
+        + ("<p>対象から検索　" + links + "</p>" if links else "")
+        + (
+            "<h3>原文と解釈を読める記事</h3><ul>" + examples_html + "</ul>"
+            if examples
+            else ""
+        ),
+    )
+
+
 def archive(c, q):
     conditions = []
     params = []
@@ -422,6 +531,22 @@ def archive(c, q):
     def cond(sql, v):
         conditions.append(sql)
         params.append(v)
+
+    plan = q.get("plan", "")
+    selected = None
+    if plan:
+        if not re.fullmatch(UUID, plan):
+            raise ValueError("実行IDを確認してください")
+        selected = c.execute(
+            "SELECT kind,label FROM plans WHERE id=%s AND kind IN ('history','daily')",
+            (plan,),
+        ).fetchone()
+        if not selected:
+            raise LookupError
+        cond(
+            "EXISTS(SELECT FROM plan_hits h WHERE h.plan_id=%s AND h.capture_id=cap.id)",
+            plan,
+        )
 
     for key, col in (("site", "cap.host"), ("body", ""), ("stage", "")):
         v = q.get(key, "")
@@ -441,6 +566,8 @@ def archive(c, q):
                 ("EXISTS" if v == "yes" else "v.id IS NOT NULL AND NOT EXISTS")
                 + "(SELECT FROM interpretations i WHERE i.version_id=v.id AND i.status='ok')"
             )
+        if key == "stage" and v in ("queued", "working", "failed"):
+            cond("(SELECT state FROM version_progress WHERE id=v.id)=%s", v)
     for k, op in (("from", ">="), ("to", "<=")):
         if q.get(k):
             try:
@@ -449,7 +576,15 @@ def archive(c, q):
                 raise ValueError("期間には有効な日付を指定してください。")
             cond("v.article_day" + op + "%s", v)
     term = q.get("q", "").strip()[:250]
-    if term:
+    field = q.get("field", "")
+    if term and field == "target":
+        cond(
+            """EXISTS(SELECT FROM interpretations i CROSS JOIN LATERAL jsonb_array_elements(i.items) item
+             WHERE i.version_id=v.id AND i.status='ok' AND
+             strpos(lower(normalize(concat_ws(' ',item->>'horse',item->>'race'),NFKC)), lower(normalize(%s,NFKC)))>0)""",
+            term,
+        )
+    elif term:
         cond(
             """strpos(lower(normalize(concat_ws(' ',cap.title,v.title,v.body,cap.host,
                  (SELECT string_agg(concat_ws(' ',i.items::text,(i.evidence->'normalized_targets')::text),' ') FROM interpretations i WHERE i.version_id=v.id AND i.status='ok')),NFKC)),
@@ -488,14 +623,31 @@ def archive(c, q):
         + ESC(term)
         + '" placeholder="馬名、レース名、本文の言葉"></label>'
     )
+    if plan:
+        form += '<input type="hidden" name="plan" value="' + ESC(plan) + '">'
     fields = (
         (
+            "field",
+            "検索範囲",
+            [("", "本文・見出し・解釈"), ("target", "LLMが特定した馬・競走")],
+        ),
+        (
             "site",
-            "媒体",
+            "掲載ホスト",
             [("", "すべて")] + [(r["host"], site(r["host"])) for r in all_hosts],
         ),
         ("body", "本文", [("", "すべて"), ("yes", "保存あり"), ("no", "URLのみ")]),
-        ("stage", "解釈", [("", "すべて"), ("yes", "解釈済み"), ("no", "未解釈")]),
+        (
+            "stage",
+            "解釈",
+            [
+                ("", "すべて"),
+                ("yes", "解釈済み"),
+                ("queued", "解釈待ち"),
+                ("working", "処理中"),
+                ("failed", "失敗"),
+            ],
+        ),
         ("sort", "並び順", [("", "取得が新しい順"), ("date", "記事日時が新しい順")]),
     )
     for k, title, choices in fields:
@@ -520,11 +672,18 @@ def archive(c, q):
         )
     form += "<button>検索</button></form>"
     h = (
-        metrics(t)
+        (
+            (
+                "<p>"
+                + anchor("/run/" + plan, "← " + selected["label"] + " の実行記録")
+                + "</p>"
+            )
+            if selected
+            else trial_links(c)
+            if trial()
+            else ""
+        )
         + form
-        + "<p>"
-        + anchor("/legacy", "移行前の通常DB資料を読む")
-        + "</p>"
         + f'<h2>検索結果　{total:,} URL</h2><ul class="articles">'
     )
     for r in result:
@@ -557,7 +716,12 @@ def archive(c, q):
             )
         )
         if r["version_id"]:
-            h += " " + badge("解釈済み" if ii else "未解釈", "" if ii else "neutral")
+            progress = c.execute(
+                "SELECT state FROM version_progress WHERE id=%s", (r["version_id"],)
+            ).fetchone()
+            h += " " + badge(progress_label(progress["state"]), "" if ii else "neutral")
+            if ii:
+                h += "<small> 解釈 " + str(len(ii["items"])) + " 項目</small>"
         h += "</div></li>"
     h += '</ul><div class="pager">'
     if page > 1:
@@ -566,9 +730,13 @@ def archive(c, q):
     if page * 20 < total:
         h += anchor(linkto("/articles", {**q, "p": page + 1}), "次の20件 →")
     h += (
-        '</div><div class="blocks">'
+        "</div><h2>"
+        + ("今回のテストDB全体" if trial() else "本番DB全体")
+        + "</h2>"
+        + metrics(t)
+        + '<div class="blocks">'
         + panel(
-            "媒体別の本文URL",
+            "掲載ホスト別の本文URL",
             table(
                 ["媒体", "URL"],
                 [
@@ -588,11 +756,13 @@ def archive(c, q):
                 ["年", "本文URL", "保存版"],
                 [(r["y"] or "日時不明", r["n"], r["v"]) for r in years],
             )
-            + f"<small>本文のないURLは別に {t['links']:,} 件。</small>",
+            + f"<small>DB全体で本文のないURLは {t['links']:,} 件。</small>",
         )
         + "</div>"
     )
-    return layout("articles", "記事を探す", h)
+    return layout(
+        "articles", pattern(selected["kind"]) if selected else "記事を探す", h
+    )
 
 
 def detail(c, ident):
@@ -605,15 +775,25 @@ def detail(c, ident):
         else None
     )
     heading = (v or cap)["title"] or "見出し不明"
+    membership = c.execute(
+        """SELECT DISTINCT p.id,p.kind FROM plan_hits h JOIN plans p ON p.id=h.plan_id
+        JOIN captures a ON a.id=h.capture_id WHERE a.version_id=%s OR a.id=%s ORDER BY p.kind""",
+        (cap["version_id"], ident),
+    ).fetchall()
     h = (
         "<p>"
         + anchor("/articles", "← 記事一覧")
+        + "".join(
+            "　"
+            + anchor(linkto("/articles", {"plan": str(m["id"])}), pattern(m["kind"]))
+            for m in membership
+        )
         + "</p>"
         + panel(
             "出典と保存情報",
             rows(
                 [
-                    ("媒体", ESC(site(cap["host"]))),
+                    ("掲載ホスト", ESC(site(cap["host"]) + "　" + cap["host"])),
                     (
                         "掲載・更新の表示",
                         ESC(v["date_label"] if v and v["date_label"] else "不明"),
@@ -636,7 +816,12 @@ def detail(c, ident):
     )
     if v:
         h += (
-            '<section class="article"><h2>保存した原文</h2>'
+            '<p class="jump">'
+            + anchor("#source", "保存した原文")
+            + "　"
+            + anchor("#interpretation", "馬・競走別のLLM解釈")
+            + "</p>"
+            '<section class="article" id="source"><h2>保存した原文</h2>'
             + badge("公開部分のみ" if v["partial"] else "本文保存", "neutral")
             + '<p class="sourcebody">'
             + ESC(v["body"])
@@ -646,9 +831,12 @@ def detail(c, ident):
             "SELECT * FROM interpretations WHERE version_id=%s ORDER BY observed_at DESC",
             (v["id"],),
         ).fetchall()
-        h += '<section class="article"><h2>独立解釈</h2>'
+        h += '<section class="article" id="interpretation"><h2>馬・競走別のLLM解釈</h2>'
         if not it:
-            h += "<p>未解釈・対象未確定</p>"
+            progress = c.execute(
+                "SELECT state FROM version_progress WHERE id=%s", (v["id"],)
+            ).fetchone()
+            h += "<p>" + progress_label(progress["state"]) + "・対象未確定</p>"
         for i in it:
             h += (
                 "<p>"
@@ -809,6 +997,8 @@ def run_detail(c, ident, q):
             ]
         ),
     )
+    if p["kind"] in ("history", "daily"):
+        h = source_summary(c, ident, p["kind"]) + h
     result = []
     for it in items:
         t = it["target"]
@@ -911,4 +1101,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("192.168.0.14", PROFILES[database()][2]), Handler).serve_forever()
+    ThreadingHTTPServer(
+        ("192.168.0.14", PROFILES[database()][2]), Handler
+    ).serve_forever()
