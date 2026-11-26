@@ -293,6 +293,14 @@ def excerpt(capture_id: str, offset: int = 0, length: int = 700) -> dict:
                 chars=len(body), text=body[offset:offset+length], published=rec.get("published_label"))
 
 
+def daily_horse(horse):
+    display = horse["name"]
+    name = re.sub(r"^[(（](?:外|地|市|父|抽)[)）]\s*", "", display)
+    if name == display:
+        return horse
+    return {**horse, "name": name, "display_name": horse.get("display_name", display)}
+
+
 def seeds(roster: str, offset: int = 0, limit: int = 12, name: str = "", year: str = "") -> dict:
     """Read a published or historical roster. Filter by a name fragment or activity year."""
     if not re.fullmatch(r"[a-z0-9-]+", roster) or offset < 0 or not 1 <= limit <= 100:
@@ -303,9 +311,16 @@ def seeds(roster: str, offset: int = 0, limit: int = 12, name: str = "", year: s
     else:
         raw = p.read_bytes() if p.is_file() else gzip.decompress(p.with_suffix(".json.gz").read_bytes())
         data = json.loads(raw)
-    rows = [h for h in data["horses"] if name in h["name"] and (not year or year in h.get("years", []))]
+    horses = data["horses"]
+    if "stage" in data:
+        horses = (daily_horse(horse) for horse in horses)
+    rows = [h for h in horses if name in h["name"] and (not year or year in h.get("years", []))]
+    source_details = {k: data[k] for k in ("race_key", "observed_at", "start", "end", "domain") if k in data}
+    if "id" in data:
+        source_details["observation_id"] = data["id"]
     return dict(roster=roster, source=data["source"], stage=data.get("stage", "history"),
-                count=len(rows), horses=rows[offset:offset+limit], next_offset=min(offset+limit, len(rows)))
+                count=len(rows), horses=rows[offset:offset+limit],
+                next_offset=min(offset+limit, len(rows)), **source_details)
 
 
 def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str) -> dict:
@@ -317,10 +332,7 @@ def roster_page(roster: str, stage: str, race_key: str, url: str, selector: str)
     for cell in soup.select(selector):
         name = cell.get_text(" ", strip=True)
         if name:
-            core_name = re.sub(r"^[(（](?:外|地|市|父|抽)[)）]\s*", "", name)
-            horse = {"name": core_name}
-            if name != core_name:
-                horse["display_name"] = name
+            horse = daily_horse({"name": name})
             link = cell if cell.name == "a" else cell.select_one("a[href]")
             if link and link.get("href"):
                 horse["source_link"] = urljoin(final, link["href"])
