@@ -1,139 +1,47 @@
-# VM15の収集・閲覧を管理する
+# VM15の本番収集と閲覧
 
-> **最新の作業指示（2026-11-28）**：[本番の原文収集・テスト資料撤去・停止再開](../../../docs/instructions/2026-11/2026-11-28_nlp_production_collection_instruction.md)へ切り替えた。Codexが旧試験を終了・撤去し、必要な修正と短い確認後に本番の過去・日次収集を開始する。記事解釈は保留。この文書更新だけでは実機を操作していない。以下の旧試験用の再開コマンドは今回使わず、実行担当が本番配備に合わせて手順と実測状態を更新する。
+VM15はJRA過去名簿の有限収集と、毎朝06:40 JSTの日次収集を同じ本番DBで実行する。2026年11月28日に運転を開始した。端末を閉じても、サーバ上のsystemdとHermes Cronが続行する。記事の独立解釈・馬別要約は後日の指示まで保留。[開始時の実測・検証](../../../docs/reports/2026-11/2026-11-28_nlp_production_collection_report.md) ・ [本番Dashboard](http://192.168.0.14:8786/) ・ [原文検索](http://192.168.0.14:8786/articles)
 
-## 2026-11-27までの配備記録と手順
+## 状態を見る、止める、再開する
 
-本番の資料庫を空に戻し、旧研究を復元検証した私有退避物と新しい検証用資料庫を分けた。LANの閲覧画面は [本番](http://192.168.0.14:8786/) と [検証](http://192.168.0.14:8787/)。本番の全名簿、毎朝予定、常駐解釈の開始には個別指示を要する。
+VM15の管理シェルで、目的に合うコマンドを一つ選ぶ。
 
-2026年11月27日に `5bf07b0` の馬別一覧と3つの改訂Skillを配備した。現地の検索Skillの追記を取り込んだ最終実機RELEASEは `abffeba`。以前の2,438版の解釈計画は記事を保存した区切りで一時停止した。取得IDを固定した6件の比較も終了し、検証用8787番で新しい24要約を閲覧できる。[馬別一覧](http://192.168.0.14:8787/horses) ・ [配備と旧新比較の実機レポート](../../../docs/reports/2026-11/2026-11-27_nlp_summary_skills_validation_report.md)
-
-| 用途 | 本番 | 有限試験 |
+| 操作 | VM15のコマンド | 結果 |
 |---|---|---|
-| DB | keiba_nlp | keiba_nlp_trial |
-| 書込・閲覧 | nlp_app / nlp_viewer | nlp_trial_app / nlp_trial_viewer |
-| 本文と再開情報 | /srv/nlp/runtime/data | /srv/nlp/trial/data |
-| Hermes・Skill・セッション・Cron | /srv/nlp/hermes | /srv/nlp/trial/hermes |
-| 毎朝の起動 | 本番予定は未登録 | 単発の収集予定は完了・無効 |
-| Dashboard | nlp-dashboard、8786 | nlp-dashboard-trial、8787 |
+| 現在の状態を見る | `sudo nlp-collectionctl status` | 過去・日次のID、入力、初回探索済み・残る頭数、残る候補、保存・再利用、媒体待機、最後の作業完了、Cronの次回予定を表示 |
+| 過去収集だけ止める | `sudo nlp-collectionctl pause-history` | 停止意図をDBに書き、短い作業の保存区切りで過去ワーカーを止める。日次は運転を続ける |
+| 過去収集を再開する | `sudo nlp-collectionctl resume-history` | 同じ名簿・計画IDの未完了位置から再開。全停止中はその指定が優先される |
+| すべての収集を止める | `sudo nlp-collectionctl pause-all` | 過去・日次・子処理を止め、朝予定を一時停止。DBと閲覧画面は利用可能 |
+| 全体の運転を再開する | `sudo nlp-collectionctl resume-all` | 朝予定と未完了の計画を有効化する。当日06:40以降は当日分の不足を補う。以前に指定した過去だけの停止は個別に解除できる |
 
-両環境の内部パスは /var/lib/keiba と /opt/data。過去名簿は共有の読取専用入力 /srv/nlp/runtime/work/inputs/history-jra.json.gz に配置し、日々の名簿・観測とは分ける。各サービスには対象DB名を記した読取り専用の /run/keiba/database と、その用途の秘密1個だけをマウントする。旧MCPも同じ設定を使う。再取込は現在のデータマウントだけを読む。旧資料は /srv/nlp/backups/two-pattern-20261127/ に保管し、復元確認DBは接続停止。過去報告の本番Dashboard記事リンクは退避前の履歴を指す。
+停止要求の時刻は `control.changed_at`、停止成立は対象計画の `state=paused` と作業中の有無で確認する。予定済みの再試行は媒体名・理由・待機期限を持つ。共有通信・ブラウザー・空き容量の一時障害は全体で待機し、DB接続障害でプロセスが終了した場合も同じ作業を再開する。すべてのワーカーが同じ永続停止指定を参照する。
 
-先行する2つの収集試行では `/srv/nlp/trial/request.json` に実行日 `day` と名簿の先頭頭数 `history_limit` を指定し、検証用Hermesで朝プロンプトを1回起動した。過去用の指定範囲は `history_prepare` に渡した。この試行の `operations.py finite <過去計画ID> <日次計画ID>` は、既知URLの再利用も含め、両計画に属する全保存版を対象にする。計画IDとJST実行日は引き続き履歴に残っている。
+## 計画と保存先
 
-改訂Skillの比較では、事前に固定した取得IDごとに `collection_mcp.interpret(capture_id, fresh=True)` を旧新各1回呼んだ。旧計画の待機2,336件は一時停止中で、今回の比較に伴う再開予定はない。
+| 用途 | 本番 | 旧試験の隔離先 |
+|---|---|---|
+| DB・ロール | `keiba_nlp` ／ `nlp_app`・`nlp_viewer` | `keiba_nlp_trial` ／ `nlp_trial_app`・`nlp_trial_viewer` |
+| 原文・観測・再開データ | `/srv/nlp/runtime/data` と本番DB | `/srv/nlp/trial/data` と検証DB。試験資料は撤去済み |
+| Hermesプロファイル | `/srv/nlp/hermes` | `/srv/nlp/trial/hermes`。検証ワーカー停止 |
+| 閲覧 | [本番8786](http://192.168.0.14:8786/) | [検証8787](http://192.168.0.14:8787/) |
 
-## 保存済み検証記事の有限解釈
+[過去計画](http://192.168.0.14:8786/run/0c09da69-a0a8-5a9d-9b50-c50060cf82da)の入力は `/srv/nlp/runtime/work/inputs/history-jra.json.gz` の54,591頭。同名の入力馬も馬IDを保持する。初回探索済み馬と残る馬、保存済み一覧の未取得候補、実リンクから追加した次ページを分けて読む。全名簿および後続仕事が落ち着くまで過去計画は進行中となる。日次は以後も続く。[当日の日次計画](http://192.168.0.14:8786/run/a054e74c-9b53-597f-8fc3-f73ad2a10f13)
 
-2026年11月27日の新計画は過去馬名検索と日次検索で保存した2,438版を固定し、採用済みの6取得IDを再利用する。実行コードのRELEASEは `6d61f27`。計画の入力、起動時の件数、馬別検索と記事詳細は[実施レポート](../../../docs/reports/2026-11/2026-11-27_nlp_saved_articles_interpretation_report.md)と[実機の進捗](http://192.168.0.14:8787/run/1534dd4e-dc20-5fa3-8753-2a630bebc7b4)で確認できる。
+過去の常設unitは `nlp-plan@0c09da69-a0a8-5a9d-9b50-c50060cf82da.service`。Hermesによる過去の探索判断は `nlp-history-choice.service` で行う。日次はネイティブCron `keiba-morning`（`949b8a4e3644`、`40 6 * * *`）。`nlp-hermes-tick.timer` が毎分予定を評価し、`nlp-daily-raw.service` が残る候補を消化する。同じJST日の再呼出しは同じ計画IDを返す。長い停止からの復帰時は最新の開催、保存した前回の一覧と重複期間、未完了の仕事から新着を拾う。
 
-VM15で使うコマンドは以下。通常の終了はワーカーに任せる。途中で停止する必要がある場合は `stop` を使い、処理中の記事が終わるまで待つ。APIや保存先の障害で一時停止した場合も、原因を解消した後に同じIDで再開する。
+原文を読むには本番の「記事を探す」から見出しを選ぶ。詳細に保存本文、公開部分のみかどうか、掲載・更新表示、取得時刻、元記事へのリンクがある。計画詳細で発見経路を確認できる。掲載日不明の資料も保存し、後の解釈用に区別する。将来の処理順は当週に関わる資料を先に、続いて掲載日の新しいものから扱う。
 
-```bash
-id=1534dd4e-dc20-5fa3-8753-2a630bebc7b4
-unit=nlp-trial-saved-articles-20261127.service
-trial_jobs() { podman exec --user 10000:10000 nlp-hermes-trial /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py "$@"; }
-trial_jobs status "$id"
-systemctl status "$unit"
-# 停止する場合
-trial_jobs stop "$id"
-# 中断位置から再開する場合。現在のunitが停止し、原因を解消した後に実行する。
-trial_jobs resume "$id"
-systemctl start "$unit"
-```
+## 配備と障害復旧
 
-初回は検証コンテナで `saved_articles.py /opt/data/validation-private/saved-articles-20261127/manifest.json /opt/data/validation-private/summary-skills-20261127/accepted.json a16db065-2244-5243-a6e3-87e3a04a9b6f 39ac8473-99ed-5c78-ad3b-70b6ff3ecfcf --versions 2438 --reuse 6` として計画を作成した。同じ入力は同じIDを返す。単発unitが `jobs.py run "$id" --respect-stop` を実行する。未解釈記事の追加探索や次回の定期起動は設定しない。
+配備版はホストの `/srv/nlp/runtime/RELEASE` に記録する。アプリは `/srv/nlp/runtime/app`、管理者配備の設定・プロンプトは `/srv/nlp/runtime/work`。各コンテナは読取専用の `/run/keiba/database` で対象DBを照合する。通常の収集MCPは計画にひも付く入口を使い、旧MCPは読取専用。サーバ設定 `article_interpretation=false` がMCP・CLI・常駐解釈の起動をガードする。本文版と発見経路は別に記録するため、複数の馬や日次から同じ記事に到達しても同じ本文版を使える。
 
-ワーカーが終了すると `nlp-trial-saved-articles-20261127-report.service` が終了状態を確認する。一巡を終えた計画だけについて、検証コンテナ内で `saved_article_report.py` を使い、固定リスト、全成功版のDB・JSON、読者が使うDashboard、VM側で採取した本番・予定・各unitの状態を照合する。VM上の成果物は `/srv/nlp/trial/hermes/validation-private/saved-articles-20261127/outcome.json` と、同じディレクトリの `report.md`。照合を再実行する場合は `systemctl start nlp-trial-saved-articles-20261127-report.service` を使う。これによるモデル呼出しは0回。
+再配備には固定したGit版を使う。Windowsでアーカイブを作成するときは `git -c core.autocrlf=false -c core.eol=lf archive` を使う。VM15に展開した版で `bash infra/nlp-vm/runtime/install-files.sh "$release_commit"` を実行する。DB変更がある場合はその版のマイグレーションを対象DBへ適用する。更新前のSkill・設定のみを私有領域へ保持する。現地Skillの変更保護が表示された場合は、採用する差分をGitと配備先で照合する。再配備時は元の運転・停止状態を記録し、必要なワーカーとDashboardに新しいコードを読み込ませてから元の状態に戻す。
 
-## 配置と読取り
+## 容量とバックアップ
 
-| 構成 | 通常環境 |
-|---|---|
-| Hermes | `nlp-hermes.service`、通常プロファイル `/srv/nlp/hermes`（コンテナ内 `/opt/data`）、UID/GID 10000。固定Hermesの公式Cronを使う |
-| 実装 | `/srv/nlp/runtime/app` → `/opt/keiba`。配備コミットは `/srv/nlp/runtime/RELEASE`。コード、設定、作業規約はエージェントから読み取り専用 |
-| Skill | `/opt/data/skills/{keiba-search,keiba-interpret,keiba-coordinate}`。各Skillの `references/work-rules.md` に共通規約を複製。通常作業ディレクトリは `/opt/nlp-research` |
-| 取得・解釈 | 通常PostgreSQLの `collection.versions / captures / interpretations`。取得IDから元URL・本文版・解釈入力が引ける。旧形式のスキーマは `public`。本番の旧試験記事は退避済み。`observations` は一覧、版への経路、名簿、取得の観測 |
-| 進捗とファイル | `collection.plans / work_items`。私有ファイルは `/srv/nlp/runtime/data` → `/var/lib/keiba`。本文、観測ID、名簿、方針、標本はこの領域。対象を途中で増減しても完了位置はDBに残る |
-| 閲覧 | `nlp-dashboard.service`、VM15のLANアドレスのTCP 8786のみ。読取ロール `nlp_viewer` に必要な表・ビューのSELECTを付与。旧DBも別一覧で読める |
-| 健康確認 | `nlp-review-health.timer` が5分ごとにモデル一覧、共用MCPのツール、公開月別一覧のHTTP状態、Cron用タイマー、常駐解釈の状態を記録。本文保存・モデル回答生成は行わない |
+`df -h /srv/nlp` が書込み先の空き容量を示す。収集は新しい作業の前に空きを確認し、512 MiB未満なら全経路を待機にする。運用中のバックアップには既存の手動手順を使う。運転状態を控えて書込みを区切りで停止し、DB・ファイル・設定を同じ復旧点として管理者専用の領域に保存する。
 
 ```bash
-kt() { podman exec --user 10000:10000 nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py "$@"; }
-hc() { podman exec --user 10000:10000 nlp-hermes hermes cron "$@"; }
-hc list
-hc status
-systemctl is-active nlp-dashboard nlp-hermes nlp-review-health.timer
-df -h /srv/nlp
-du -sh /srv/nlp/runtime/data /srv/nlp/hermes
-```
-
-## 過去名簿
-
-`history` は既存の `/opt/nlp-research/inputs/history-jra.json.gz` から馬・活動年・指定媒体の対象を固定する。SHA-256、対象馬数、期間は計画に保存する。同じ名簿・条件の作成は同じIDを返す。既定は馬名の媒体内検索とラジオNIKKEIの月別一覧。月別一覧の続きは観測IDとoffsetを使う。本文がある既知URLは再利用し、必要な再訪は `capture_url(revisit=true)`。更新版は同じURLに追加する。 通常の探索判断は、Hermesの単発起動に検索・統括Skillと history.prompt.txt を渡して得る。指定頭数を伝えると history_prepare が共通の計画を作り、Hermesが一般検索や追加媒体を選ぶ。plan_step の続きは同じIDで kt run を使う。次の kt history は機械的な計画部品のCLIで、単独でHermesの探索判断を行ったことにはならない。
-
-```bash
-# 開始指示後。IDの作成と実行は別操作。
-id=$(kt history)
-systemctl enable --now "nlp-plan@$id.service"
-kt status "$id"
-kt stop "$id"
-# 現在の作業単位が終わり、状態がpausedになってから実行する。
-systemctl disable "nlp-plan@$id.service"
-kt resume "$id"
-systemctl enable --now "nlp-plan@$id.service"
-```
-
-`--year 2021 --limit 2` はその年に活動した先頭2頭に限定できる。`--source blog --year 2018` は対象年の回顧検索、`--media-only --year 2021 --media radio` は指定年の月別アーカイブだけを追加する。個別に終わった失敗・一部失敗は `new_id=$(kt retry-failed "$id")` でその対象だけの別計画にできる。停止中の計画は起動時の `--respect-stop` が尊重する。作業中の異常終了は、同じIDから最後の未確定単位を再試行する。既知URL、保存版、解釈入力の照合により再利用する。
-
-## 毎朝の収集
-
-提案は毎日 **06:40 JST**。現在は本運用の次回予定なし。指定された当日と直近の開催リンクから登録・出馬表・結果を取り込み、前回の同段階の名簿と比較する。登録のない一般競走も出馬表を読める。新しく見つかった名前を当日の有限計画に追加する。新着はラジオNIKKEI・馬トク報知・競馬ブック・デイリーうま屋を用意した。親は追加の馬名、競走、媒体、再訪、切り上げを選ぶ。[朝のプロンプト](morning.prompt.txt)
-
-```bash
-# 毎朝の開始が指定された時だけ登録する。
-hc create --name keiba-morning --deliver local --failure-deliver local \
-  --skill keiba-coordinate --skill keiba-search --workdir /opt/nlp-research \
-  '40 6 * * *' "$(cat /srv/nlp/runtime/work/morning.prompt.txt)"
-systemctl enable --now nlp-hermes-tick.timer
-hc list
-hc status
-```
-
-タイマーは毎分公式 `hermes cron tick` を呼ぶ。登録スケジュールを評価してセッションを起動するのはHermes。CLIとCronそれぞれに `mcp-collection` とSkillを設定した。Cronセッションは日次計画の作成・一部処理・追加探索を担当し、残った対象は同じIDをサーバで処理する。同日の本運用計画は一つ。端末もブラウザーも閉じられる。変更には `hc list` で正確なIDを確認し、`hc edit --help`、`hc pause ID`、`hc resume ID` を使う。全名簿の起動や常駐解釈は別に指定する。
-
-## 馬別の解釈を読む
-
-配備後の `/horses` は、保存済みLLM解釈の馬名から、その馬の文章を直接表示する。ホームと共通ナビゲーションに入口があり、元記事の検索結果からも同じ語で移動できる。部分一致から馬名を選んで絞り込める。掲載元・掲載期間・試行計画で絞り、1記事・1頭を1件として20件ずつ表示する。
-
-各URLの最新の取得に対応する本文版と、その版の最新の成功解釈を選んでから馬名を検索する。試行を指定した場合はその試行内の取得が対象。既存の複数itemは、同じ記事・同じ馬のカード内に保存時の文章と競走・前後関係を残して表示し、新たな一文要約と区別する。原文と解釈の比較、掲載元記事、未解釈記事の一覧へ進める。検索のたびにLLMを呼ばず、DBへの書込みも行わない。
-
-## 独立解釈
-
-```bash
-# 少数の指定版。IDはDashboardの「取得ID」。
-id=$(kt interpret --capture "$capture_id")
-kt run "$id"
-kt status "$id"
-# 常駐解釈の開始・停止が指定された場合。
-systemctl enable --now nlp-interpret.service
-systemctl disable --now nlp-interpret.service
-```
-
-保存時刻・掲載／更新表示・本文を渡し、1記事につき1回のモデル呼出しで、独立して説明されている馬ごとに一つの要約にする。比較相手や併せ馬として名前が出るだけなら対象馬の文章内に含め、複数馬のコメント集では各馬に一つずつ作る。`race` は記事の主題の競走一つ。今回走の展望に過去走の説明があってもpreを保ち、過去競走の別項目やmixedへの変更を要求しない。
-
-今回の比較では、旧解釈を破棄してよい。Codexが少数の比較記録を通常読込対象外へ控え、検証DBと対応JSONを揃えて整理する。原文・取得履歴と停止した旧キューは保持する。比較は明示した取得IDだけで行い、`operations.py finite` に元のA/B収集計画を渡して全保存版を再登録しない。詳細は最新指示書を参照する。
-
-自動の待機対象選択では、同じ取得に日時付き入力形式で成功した解釈があれば、Skillやモデル設定の変更だけでは再処理しない。掲載表示の訂正に対応する新たな入力は対象になり得る。明示した取得IDの有限再解釈は、現在のSkill・モデル設定・正確な入力が一致する成功結果のみを再利用する。旧入力の成功も旧版の結果として読める。連続処理は新着優先で、現在のSkill・設定による同じ失敗入力は1日置く。他記事は処理可能。
-
-単一モデルのロックは記事単位。日次Cronと独立推論が同じロックを使う。全名簿・解釈は日次収集に区切りで順番を譲る。常用環境で手動のHermesセッションを起動する際も `podman exec --user 10000:10000 nlp-hermes flock /var/lib/keiba/local-model.lock hermes …` を用いる。
-
-## バックアップ・復旧
-
-11月27日の変更前バックアップは `/srv/nlp/backups/runtime-20261127/`。変更前DB、通常Hermesの設定とホーム、研究用2プロファイル、旧QuadletとHBAを保管した。DBと観測ファイル・名簿を対で戻す。秘密ファイルはホスト私有領域で管理し、バックアップの保管先も管理者限定とする。
-
-```bash
-# 保存時は書込処理を区切りで止め、状態を確認して実行する。
 umask 077
 dest="/srv/nlp/backups/collection-$(date +%Y%m%dT%H%M%S)"
 mkdir -m 700 -p "$dest"
@@ -143,24 +51,4 @@ sha256sum "$dest/corpus.dump" "$dest/runtime.tgz" > "$dest/SHA256SUMS"
 podman exec -i -u postgres nlp-postgres pg_restore --list < "$dest/corpus.dump" > "$dest/catalog.txt"
 ```
 
-復元はまず空の隔離DBへ `pg_restore --exit-on-error --no-owner --no-acl -d 復元先` を実行する。ロール・拡張を揃え、通常DBに切り替える前にURL・版・解釈・旧資料・計画件数とIDの対応を照合する。指定した復旧点のDBと同時点のファイルを私有の別ディレクトリへ展開し、所有者10000、Skill・設定、Cron状態、保存元を確認する。元のサービスや現在の正本を上書きする切替は復旧依頼の対象を確認して行う。DB保存前に残った観測ファイルは、書込を区切りで止めて `corpus.import_directory(Path("/var/lib/keiba"), "server-recovery")` で再照合できる。
-
-## 再配備
-
-WindowsのGitから配備アーカイブを作る場合は `git -c core.autocrlf=false -c core.eol=lf archive` を用いる。VM15上のシェル・設定・SkillにGitのblobと同じ改行を渡せる。
-
-VM15の既存Hermes基盤・PostgreSQLと `nlp_app` を使用する。初回はDB変更前バックアップを取り、閲覧ロールをLOGIN権限のみで作り、`default_transaction_read_only=on` とする。パスワードはVM15内で生成し、`/srv/nlp/hermes-private/nlp_viewer`（10000:10000、0400）に置く。HBAの許可元はVM15自身の `192.168.0.14/32`。[HBA](../db/pg_hba.conf)・[通常DBの追加スキーマと権限](../db/migrations/002_collection_runtime.sql)
-
-再配備はコード・Skill・設定の更新として行い、本番と検証それぞれの保存先と進捗を維持する。旧研究資料の通常DBへの移行手順は、本番清掃・検証領域分離により廃止した。現在の本番へ研究本文・試験解釈・古い名簿状態を取り込まない。Skillの配備時は、Hermesによる現地修正を保護したという出力があれば内容を照合し、今回の「1記事・1頭」方針が実際に配備されたかを確認する。
-
-```bash
-# 固定版のGitアーカイブをVM15の私有ステージへ展開してから実行。
-podman build -t localhost/nlp-runtime:20261127 -f infra/nlp-vm/runtime/Dockerfile infra/nlp-vm/runtime
-bash infra/nlp-vm/runtime/install-files.sh "$release_commit"
-systemctl restart nlp-hermes nlp-dashboard
-systemctl enable --now nlp-review-health.timer
-systemctl start nlp-review-health.service
-```
-
-配備スクリプトは既存の通常Skillと設定を時刻付きで退避する。運用タイマー・常駐解釈の有効化は上の個別手順による。閲覧はVM15のLANインターフェース `enp0s17`、送信元 `192.168.0.0/24`、宛先 `192.168.0.14:8786/tcp` への接続を許可した。
-
+復元確認は別の空DB・ファイル領域で行い、復旧点の版・取得・計画・再開位置、Cron、設定と所有者を照合する。旧検証資料の復元経路は11月28日に撤去した。[11月27日以前の手順書の履歴](https://github.com/kendo910x/keibaAI_nlp/blob/2ac690e271d9b7aeffb9bb2ebeef15ee58b3ac67/infra/nlp-vm/runtime/README.md)
