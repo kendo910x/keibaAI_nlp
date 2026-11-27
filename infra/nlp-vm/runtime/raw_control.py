@@ -2,6 +2,11 @@
 
 from corpus import connect
 
+# Calendar and race-card work belongs to the same publisher as its news route.
+# Independently chosen web results may come from unrelated hosts.
+WAIT_SOURCE_SQL = """CASE WHEN w.target->>'type'='selected_article'
+    THEN lower(split_part(w.target->>'url','/',3)) ELSE coalesce(w.target->>'source','lab') END"""
+
 
 def controls(c):
     return c.execute("SELECT * FROM collection_control WHERE singleton").fetchone()
@@ -69,12 +74,12 @@ def change(action):
 
 def progress(c, ident):
     return c.execute(
-        """SELECT count(*) FILTER(WHERE target ? 'horse_id' AND target->>'type'='horse') horses,
+        f"""SELECT count(*) FILTER(WHERE target ? 'horse_id' AND target->>'type'='horse') horses,
         count(*) FILTER(WHERE target ? 'horse_id' AND target->>'type'='horse' AND state IN ('done','failed','partial')) searched,
         coalesce(sum((target->>'count')::int-(target->>'offset')::int) FILTER
           (WHERE target->>'type'='listing' AND state IN ('queued','working')),0) candidates,
         count(*) FILTER(WHERE state IN ('queued','working') AND (ready_at>now() OR EXISTS
-          (SELECT FROM route_waits h WHERE h.source IN ('*',w.target->>'source') AND h.retry_at>now()))) held,
+          (SELECT FROM route_waits h WHERE h.source IN ('*',{WAIT_SOURCE_SQL}) AND h.retry_at>now()))) held,
         count(*) FILTER(WHERE state IN ('failed','partial')) failures,
         coalesce(sum((result->>'saved')::int),0) saved,coalesce(sum((result->>'known')::int),0) reused,
         max(updated_at) FILTER(WHERE state IN ('done','partial','failed')) last_finished

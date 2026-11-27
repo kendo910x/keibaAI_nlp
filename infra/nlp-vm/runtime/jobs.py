@@ -546,9 +546,9 @@ def run(ident, steps=None, respect_stop=False):
                 priority = """(SELECT count(*) FROM work_items done WHERE done.plan_id=w.plan_id
                     AND done.state IN ('done','failed','partial') AND done.target->>'origin'=w.target->>'origin'), position"""
             if collecting:
-                eligible = """SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working')
+                eligible = f"""SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working')
                     AND (ready_at IS NULL OR ready_at<=now()) AND NOT EXISTS
-                    (SELECT FROM route_waits h WHERE h.source IN ('*',w.target->>'source') AND h.retry_at>now())"""
+                    (SELECT FROM route_waits h WHERE h.source IN ('*',{raw_control.WAIT_SOURCE_SQL}) AND h.retry_at>now())"""
                 # Spend most turns consuming already discovered pages, while regularly starting roster seeds.
                 lane = " AND (target ? 'queue_key')" if n % 5 else ""
                 item = c.execute(eligible + lane + " ORDER BY position LIMIT 1",(ident,)).fetchone()
@@ -651,10 +651,15 @@ def run(ident, steps=None, respect_stop=False):
                 if collecting and (result.get("service_failure") or deferred in ("http_429","http_503","cooldown")):
                     from routes import retry_seconds
                     seconds = retry_seconds(result.get("retry_after"),300 if result.get("service_failure") else 90)
-                    source = "*" if result.get("service_failure") else item["target"].get("source","calendar")
-                    c.execute("""INSERT INTO route_waits VALUES (%s,now()+%s*interval '1 second',%s)
-                       ON CONFLICT(source) DO UPDATE SET retry_at=greatest(route_waits.retry_at,excluded.retry_at),reason=excluded.reason""",
-                       (source,seconds,result.get("error") or deferred))
+                    c.execute(
+                        f"""INSERT INTO route_waits (source,retry_at,reason)
+                        SELECT CASE WHEN %s THEN '*' ELSE {raw_control.WAIT_SOURCE_SQL} END,
+                            now()+%s*interval '1 second',%s
+                        FROM work_items w WHERE w.plan_id=%s AND w.position=%s
+                        ON CONFLICT(source) DO UPDATE SET
+                            retry_at=greatest(route_waits.retry_at,excluded.retry_at),reason=excluded.reason""",
+                        (bool(result.get("service_failure")),seconds,result.get("error") or deferred,ident,pos),
+                    )
                     if not more:
                         state = "queued"
                         c.execute("UPDATE work_items SET ready_at=now()+%s*interval '1 second' WHERE plan_id=%s AND position=%s",(seconds,ident,pos))

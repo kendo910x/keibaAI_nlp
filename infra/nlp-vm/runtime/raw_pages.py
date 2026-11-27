@@ -213,20 +213,22 @@ def page_step(target, plan):
             )
             for hit in data["candidates"]
         ]
-        if all(dates) and max(dates) < date.fromisoformat(data["day"]) - timedelta(
-            days=8
-        ):
-            return result, follow
         with connect() as c:
             prior = c.execute(
-                """SELECT data->'candidates' items FROM observations WHERE family='listings'
+                """SELECT data->'candidates' items, data->>'day' day FROM observations WHERE family='listings'
               AND data->>'channel'=%s AND data->>'head'='true' AND data->>'day'<%s AND data->>'status'='ok'
               ORDER BY data->>'day' DESC LIMIT 1""",
                 (channel, data["day"]),
             ).fetchone()
+        cutoff = date.fromisoformat(data["day"]) - timedelta(days=8)
+        if prior:
+            cutoff = min(cutoff, date.fromisoformat(prior["day"]) - timedelta(days=1))
+        if all(dates) and max(dates) < cutoff:
+            return result, follow
         if prior:
             old = {url_key(hit["url"]) for hit in prior["items"]}
-            overlap = any(url_key(hit["url"]) in old for hit in data["candidates"])
+            current = {url_key(hit["url"]) for hit in data["candidates"]}
+            overlap = bool(old) and len(old & current) >= min(3, len(old), len(current))
     follow.append(
         dict(
             context,

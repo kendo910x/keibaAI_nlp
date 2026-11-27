@@ -21,6 +21,7 @@
 | [山口吉野の回顧一覧](https://www.yamaguchi-yoshino.com/archive/category/%E5%9B%9E%E9%A1%A7) | `a.entry-title-link` と `.pager-next a` で各30件のページを辿れた。公開の検索欄は `/search?q=馬名`。シックスペンスではマイルCSと安田記念を含む11件。記事内の関連リンクや前後の記事も辿れる。筆者の解釈と騎手・調教師の談話を区別する。 |
 | [スポニチ競馬Web](https://keiba.sponichi.co.jp/news/)・[ジャパンC特集](https://keiba.sponichi.co.jp/feature/horseracing/G1/japanc/2026) | キーワードと日付は別の入口。日付選択で22日→OK→検索を操作すると `/news/2026/11/22?search=&date=2026%2F11%2F22` が開いた。トップに `?date=...` だけを足すと新着が残った。第10条には私的使用の範囲と複写・転送に関する記述の両方がある。旧研究の一律リンク設定は解除し、現在の操作との関係を読む。[利用規約第10条](https://keiba.sponichi.co.jp/terms_of_service) |
 | [競馬ラボのニュース](https://www.keibalab.jp/topics/backnumber.html) | 一覧の `#topicsTab .tabList li > a[href^="/topics/"]` から50リンク。条件戦馬を含む2歳馬情報やコラムも見つかる。公開ニュースは私的保存の対象とし、出馬表では馬名欄を使う。FAQと規約を参照し、会員専用部分等の実際の制限に従う。[FAQ](https://pc.keibalab.jp/info/faq.html)[利用規約・著作権表示](https://www.keibalab.jp/info/agreement.html) |
+| [東スポ競馬の予想欄](https://tospo-keiba.jp/forecast) | 外部検索の「競走名＋調教採点・調教時計一覧」で見出しが並び、見出し自体に実名と調教評価（例: シェイクユアハート、マスカレードボール）が含まれる。同一競走で forecast/78128・78150 のように複数日のコラムが出る。検索で見つけた記事は plan_follow で計画に引き継いで保存する。 |
 | [競馬のおはなし](https://keibana.com/) | 外部検索で同じ見出しの配信が複数見つかったら、署名・配信元を確認して元の媒体の検索欄を使う。ここでは `/?s=馬名` を開き、静的HTMLの `main .head a[href*="/news/"]` に記事リンクがある。京都2Rの1着馬・2着馬は各1件で同じ記事に届いた。検証した範囲はリンク・配信関係。[元の競走記事](https://keibana.com/news/143805/) |
 
 ## 続きから収集する

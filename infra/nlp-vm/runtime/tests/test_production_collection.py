@@ -51,6 +51,27 @@ class RawRouteTests(unittest.TestCase):
         )
         self.assertEqual(result["route_status"], "ok")
 
+    def test_daily_pages_bridge_a_gap_since_the_previous_observation(self):
+        base = "https://www.keibalab.jp/topics/backnumber.html"
+        page = BeautifulSoup(
+            '<ul class="tabList"><li><a href="/topics/1/">一</a><time>2026-11-08</time></li></ul>'
+            '<a rel="next" href="?page=2">次へ</a>', "html.parser"
+        )
+        with (
+            patch.object(raw_pages, "get_html", return_value=(base, page)),
+            patch.object(raw_pages, "save", return_value={"id": "saved-list"}),
+            patch.object(raw_pages, "connect") as db,
+        ):
+            prior = db.return_value.__enter__.return_value.execute.return_value.fetchone
+            prior.return_value = {"day": "2026-11-01", "items": [{"url": base + "/older"}]}
+            target = dict(type="media", source="lab", day="2026-11-28")
+            plan = dict(id="fixture", kind="daily", input={"day": target["day"]})
+            _, tasks = raw_pages.page_step(target, plan)
+            self.assertEqual([t["type"] for t in tasks], ["listing", "page"])
+            prior.return_value = None
+            _, tasks = raw_pages.page_step(target, plan)
+            self.assertEqual([t["type"] for t in tasks], ["listing"])
+
     def test_rate_limit_does_not_consume_blocked_article(self):
         items = [
             dict(url="https://example.com/" + str(n), title=str(n)) for n in range(3)
@@ -125,7 +146,7 @@ class PersistedControlTests(unittest.TestCase):
             "history",
             "isolated control check",
             "operation",
-            [dict(type="media", source="book"), dict(type="media", source="lab")],
+            [dict(type="calendar"), dict(type="media", source="lab"), dict(type="media", source="book")],
             {},
         )
         jobs.request_stop(ident)
@@ -140,7 +161,7 @@ class PersistedControlTests(unittest.TestCase):
         def execute(target, *_args, **_kwargs):
             return (
                 dict(route_status="http_429", retry_after="90")
-                if target["source"] == "book"
+                if target["type"] == "calendar"
                 else dict(route_status="no_matching_links")
             ), []
 
@@ -151,10 +172,10 @@ class PersistedControlTests(unittest.TestCase):
                 "SELECT state FROM work_items WHERE plan_id=%s ORDER BY position",
                 (ident,),
             ).fetchall()
-            self.assertEqual([r["state"] for r in states], ["queued", "done"])
+            self.assertEqual([r["state"] for r in states], ["queued", "queued", "done"])
             self.assertTrue(
                 c.execute(
-                    "SELECT retry_at>now() AS held FROM route_waits WHERE source='book'"
+                    "SELECT retry_at>now() AS held FROM route_waits WHERE source='lab'"
                 ).fetchone()["held"]
             )
         raw_control.change("pause-all")
@@ -162,4 +183,4 @@ class PersistedControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stopped"):
             jobs.create("daily", "blocked", "operation", [], {})
         raw_control.change("resume-all")
-        self.assertEqual(jobs.status(ident)["items"], {"done": 1, "queued": 1})
+        self.assertEqual(jobs.status(ident)["items"], {"done": 1, "queued": 2})
