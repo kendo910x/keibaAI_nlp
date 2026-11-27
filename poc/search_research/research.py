@@ -55,12 +55,15 @@ def read(group, ident):
     return json.loads((ROOT / group / (ident + ".json")).read_text(encoding="utf-8"))
 
 
-def links_only(url):
-    hosts = set()
+def collection_policy():
     policy = (Path("/opt/nlp-research") if SERVER else ROOT) / "collection-policy.json"
-    if policy.is_file():
-        hosts.update(json.loads(policy.read_text(encoding="utf-8"))["links_only_hosts"])
-    return urlsplit(url).hostname in hosts
+    return json.loads(policy.read_text(encoding="utf-8")) if policy.is_file() else {}
+
+
+def links_only(url):
+    policy = collection_policy()
+    host = urlsplit(url).hostname
+    return host in policy.get("links_only_hosts", ()) or host in policy.get("no_automated_fetch_hosts", ())
 
 
 async def shared(tool, arguments):

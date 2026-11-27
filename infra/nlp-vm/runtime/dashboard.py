@@ -52,6 +52,7 @@ ST = {
     "hochi": "馬トク報知",
     "no_matching_links": "該当リンクなし",
     "metadata_only": "リンクのみ",
+    "interpretation_failed": "解釈失敗",
     "article_element_missing": "本文欄未確認",
 }
 HEALTH = {

@@ -16,7 +16,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import httpx
 from bs4 import BeautifulSoup
 
-from research import ROOT, SERVER, digest, links_only, now, read, save
+from research import ROOT, SERVER, collection_policy, digest, links_only, now, read, save
 
 
 HEADERS = {"User-Agent": "KeibaNLPResearch/1.0"}
@@ -63,6 +63,8 @@ def public_url(url):
 
 
 def pace(url):
+    if urlsplit(url).hostname in collection_policy().get("no_automated_fetch_hosts", ()):
+        raise Unavailable("metadata_only")
     public_url(url)
     host = urlsplit(url).netloc
     if SERVER:
@@ -108,8 +110,6 @@ def record_limit(url, status, header):
 def get_html(url):
     with httpx.Client(headers=HEADERS, timeout=20) as client:
         for _ in range(6):
-            if links_only(url):
-                raise Unavailable("metadata_only")
             pace(url)
             r = client.get(url)
             if r.is_redirect:
