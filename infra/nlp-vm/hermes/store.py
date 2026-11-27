@@ -1,5 +1,7 @@
 """Database connection and bounded, parameterized reads shared by the ten MCP tools."""
 from contextlib import contextmanager
+import json
+from pathlib import Path
 from typing import Annotated, Literal
 
 import psycopg
@@ -22,6 +24,9 @@ def transaction():
             application_name="nlp-hermes-mcp",
             options="-c statement_timeout=5000 -c lock_timeout=3000 -c search_path=public,pg_catalog",
         ) as conn:
+            policy = Path("/opt/nlp-research/collection-policy.json")
+            if policy.is_file() and not json.loads(policy.read_bytes()).get("article_interpretation",False):
+                conn.execute("SET TRANSACTION READ ONLY")
             yield conn
     except psycopg.Error as exc:
         # PostgreSQL DETAIL/CONTEXT can contain input rows. Keep them out of sessions.

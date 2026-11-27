@@ -28,6 +28,7 @@ done
 infra="$root/infra/nlp-vm"
 install -m 0644 "$root"/poc/search_research/*.py "$infra"/runtime/*.py "$infra"/hermes/store.py "$infra"/runtime/dashboard.css "$base/app/"
 install -m 0644 "$infra/runtime/"*.prompt.txt "$base/work/"
+install -m 0644 "$infra/runtime/history-choice.sh" "$base/work/"
 install -m 0644 "$infra/runtime/collection-policy.json" "$base/work/"
 install -m 0644 "$root/AGENTS.md" "$base/work/PROJECT.md"
 install -m 0644 "$infra/hermes/AGENTS.md" "$base/work/AGENTS.md"
@@ -59,7 +60,6 @@ if [[ -f /srv/nlp/trial/database ]]; then
         -e 's@/srv/nlp/hermes-private/nlp_app:/run/secrets/nlp_app@/srv/nlp/trial/private/nlp_trial_app:/run/secrets/nlp_trial_app@' \
         -e 's@/srv/nlp/runtime/data:@/srv/nlp/trial/data:@' \
         -e 's@/srv/nlp/runtime/database:@/srv/nlp/trial/database:@' \
-        -e '/Volume=.*database:ro/a Volume=/srv/nlp/trial/request.json:/run/keiba/trial.json:ro' \
         -e '/^WantedBy=/d' "$infra/quadlet/nlp-hermes.container" > /etc/containers/systemd/nlp-hermes-trial.container
     sed -e 's/ContainerName=nlp-dashboard$/ContainerName=nlp-dashboard-trial/' \
         -e 's@/srv/nlp/runtime/database:@/srv/nlp/trial/database:@' \
@@ -67,6 +67,7 @@ if [[ -f /srv/nlp/trial/database ]]; then
         -e 's@/srv/nlp/hermes-private/nlp_viewer:/run/secrets/nlp_viewer@/srv/nlp/trial/private/nlp_trial_viewer:/run/secrets/nlp_trial_viewer@' \
         "$infra/quadlet/nlp-dashboard.container" > /etc/containers/systemd/nlp-dashboard-trial.container
 fi
+install -m 0755 "$infra/runtime/collectionctl" /usr/local/sbin/nlp-collectionctl
 install -m 0644 "$infra"/systemd/* /etc/systemd/system/
 printf '%s\n' "$release" > "$base/RELEASE"
 systemctl daemon-reload

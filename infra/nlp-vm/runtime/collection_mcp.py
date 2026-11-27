@@ -14,7 +14,8 @@ from corpus import connect
 from jobs import JST, add_targets, daily, history, run, status
 from profile_db import trial
 from plan_sources import PlanSession
-from research import ROOT, capture, interpret as independent, read, search
+from raw_control import check_plan
+from research import ROOT, capture, collection_policy, interpret as independent, read, require_interpretation, search
 from routes import capture_url, collect, excerpt, listing, roster_page, seeds
 from run import in_worker
 
@@ -51,6 +52,8 @@ def history_prepare(
         if full_roster or limit not in (None, designated):
             raise ValueError("Use the designated trial roster size")
         limit = designated
+    elif not collection_policy().get("article_interpretation",False) and (not full_roster or source!="net"):
+        raise ValueError("Open the fixed production roster with full_roster=true; add other routes to that plan")
     if (
         (limit is None) != full_roster
         or (limit is not None and limit < 1)
@@ -58,6 +61,7 @@ def history_prepare(
     ):
         raise ValueError("Choose a positive roster size and a supported source")
     ident = history(limit, source=source)
+    check_plan(ident)
     session.plan_id = ident
     with connect() as c:
         rows = c.execute(
@@ -93,7 +97,7 @@ def daily_prepare(sources: list[str], review: bool = False) -> dict:
     session.plan_id = daily(
         day,
         "review" if review else "operation",
-        sources,
+        sources if trial() or review else tuple(MEDIA),
     )
     return status(session.plan_id)
 
@@ -108,8 +112,7 @@ def plan_step(plan_id: str, count: int = 1) -> dict:
 
 async def plan_search(plan_id: str, subject: str, query: str) -> dict:
     """Search the public web for an agent-selected horse/race and record the actual query under its plan."""
-    if status(plan_id)["kind"] not in ("history", "daily"):
-        raise ValueError("Choose a collection plan")
+    check_plan(plan_id)
     result = await search(subject, query, 6)
     with connect() as c:
         c.execute(
@@ -129,6 +132,7 @@ def plan_follow(
     year: str = "",
 ) -> dict:
     """Queue the chosen web result (source=search, 1-based number), or another site search (net/blog) for this subject."""
+    check_plan(plan_id)
     if not subject.strip() or not reason.strip():
         raise ValueError("Include the real horse/race and the reason for the route")
     with connect() as c:
@@ -197,6 +201,7 @@ def race_roster(
 
 async def interpret(capture_id: str, fresh: bool = False) -> dict:
     """Read one previously saved body and its date label through the independent local model."""
+    require_interpretation()
     with (ROOT / "local-model.lock").open("a") as lock:
         if os.environ.get("KEIBA_MODEL_RESERVED") != "1":
             try:
@@ -209,7 +214,7 @@ async def interpret(capture_id: str, fresh: bool = False) -> dict:
 if __name__ == "__main__":
     server = FastMCP("keiba-collection")
     with ThreadPoolExecutor(max_workers=1) as pool:
-        for fn in (
+        tools = (
             horse_news,
             media_news,
             history_prepare,
@@ -228,7 +233,11 @@ if __name__ == "__main__":
             seeds,
             roster_page,
             interpret,
-        ):
+        )
+        if not collection_policy().get("article_interpretation", False):
+            # Unbound direct tools cannot carry a parent's stop state or save discovery lineage.
+            tools = (history_prepare,daily_prepare,plan_search,plan_follow,plan_step,plan_status,excerpt,seeds)
+        for fn in tools:
             if fn in (horse_news, media_news, capture, collect, capture_url):
                 fn = session.track(fn)
             server.tool()(

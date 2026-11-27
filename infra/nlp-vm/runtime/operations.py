@@ -1,11 +1,15 @@
 """Operator-started workers. Daily plans are created only by an authorized native Cron task."""
 
 import argparse
+import json
+from datetime import datetime
+from pathlib import Path
 import time
 import uuid
 from corpus import connect
-from jobs import TERMINAL, add_targets, create, interpretation, pending_captures, run
-from research import ROOT
+from jobs import JST, TERMINAL, add_targets, create, daily, interpretation, pending_captures, run
+from research import ROOT, require_interpretation
+import raw_control
 
 
 def outstanding(kind):
@@ -14,13 +18,14 @@ def outstanding(kind):
             r["id"]
             for r in c.execute(
                 """SELECT id FROM plans WHERE kind=%s AND scope='operation'
-         AND state IN ('queued','running','paused') AND NOT stop_requested ORDER BY created_at""",
+         AND state IN ('queued','running','paused','waiting') AND NOT stop_requested ORDER BY created_at DESC""",
                 (kind,),
             )
         ]
 
 
 def interpreter():
+    require_interpretation()
     stop = ROOT / "interpret.stop"
     stop.unlink(missing_ok=True)
     while not stop.exists():
@@ -40,6 +45,7 @@ def interpreter():
 
 def finite(sources):
     """Drain only versions reached by the named collection plans, including known URLs."""
+    require_interpretation()
     sources = sorted({uuid.UUID(s) for s in sources})
     if not sources:
         raise ValueError("Supply the finite collection plan IDs")
@@ -113,16 +119,62 @@ def finite(sources):
             time.sleep(10)
 
 
+def collection_status():
+    with connect() as c:
+        plans = c.execute("""SELECT id,kind,state,stop_requested,started_at,updated_at,ended_at,error,input
+             FROM plans WHERE scope='operation' AND kind IN ('history','daily') ORDER BY created_at DESC LIMIT 8""").fetchall()
+        for p in plans:
+            p.update(raw_control.progress(c,p["id"]))
+        holds=c.execute("SELECT * FROM route_waits WHERE retry_at>now() ORDER BY retry_at").fetchall()
+        return dict(control=raw_control.controls(c),plans=plans,holds=holds)
+
+
+def daily_workers():
+    while True:
+        with connect() as c:
+            if not raw_control.allowed(c,"daily"):
+                return
+        ids = outstanding("daily")
+        if not ids:
+            return
+        for ident in ids:
+            result=run(str(ident),steps=8,respect_stop=True)
+            if result["state"] in ("waiting","already_running"):
+                time.sleep(5)
+
+
+def due_daily():
+    """On recovery open today's plan once the registered native schedule is due."""
+    clock = datetime.now(JST)
+    config = Path("/opt/data/cron/jobs.json")
+    jobs = json.loads(config.read_bytes())["jobs"] if config.is_file() else []
+    morning = next((j for j in jobs if j.get("name")=="keiba-morning" and j.get("enabled")),None)
+    if not morning or (clock.hour,clock.minute) < (6,40):
+        return
+    day = clock.date().isoformat()
+    with connect() as c:
+        if not raw_control.allowed(c,"daily") or c.execute(
+                "SELECT 1 FROM plans WHERE kind='daily' AND scope='operation' AND input->>'day'=%s",(day,)).fetchone():
+            return
+    daily(day)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "action", choices=("daily", "interpret", "stop-interpret", "finite")
+        "action", choices=("daily", "due-daily","interpret", "stop-interpret", "finite", "status",
+                            "pause-all","pause-history","resume-history","resume-all")
     )
     parser.add_argument("plans", nargs="*")
     a = parser.parse_args()
     if a.action == "daily":
-        for ident in outstanding("daily"):
-            run(str(ident))
+        daily_workers()
+    elif a.action == "due-daily":
+        due_daily()
+    elif a.action == "status":
+        print(json.dumps(collection_status(),ensure_ascii=False,default=str))
+    elif a.action.startswith(("pause-","resume-")):
+        print(json.dumps(raw_control.change(a.action),default=str))
     elif a.action == "finite":
         finite(a.plans)
     elif a.action == "interpret":

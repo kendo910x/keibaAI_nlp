@@ -19,6 +19,7 @@ import research
 
 class FrozenInputTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(research, "collection_policy", return_value={"article_interpretation": True}))
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         folder = Path(tmp.name)

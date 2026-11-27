@@ -1,0 +1,10 @@
+[Unit]
+Description=Drain saved production daily raw-article plans
+Requires=nlp-hermes.service
+After=nlp-hermes.service nlp-postgres.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/podman exec --user 10000:10000 --env KEIBA_RESEARCH_ACTOR=server-worker nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py daily
+Restart=on-failure
+RestartSec=60

@@ -60,6 +60,11 @@ def collection_policy():
     return json.loads(policy.read_text(encoding="utf-8")) if policy.is_file() else {}
 
 
+def require_interpretation():
+    if SERVER and not collection_policy().get("article_interpretation", False):
+        raise ValueError("原文収集専用。記事解釈は保留中です")
+
+
 def links_only(url):
     policy = collection_policy()
     host = urlsplit(url).hostname
@@ -172,6 +177,7 @@ def interpretation_input(article, skill, settings):
 async def interpret(capture_id: str, fresh: bool = False, *, expected_version=None,
                     configuration=None, required_result=None, recover_orphan=False) -> dict:
     """Interpret a saved body with its date label; reuse only an identical successful input."""
+    require_interpretation()
     article = read("captures", capture_id)
     if expected_version is not None and article.get("version_id") != expected_version:
         raise ValueError("Saved capture no longer matches the plan version")

@@ -8,6 +8,7 @@ import gzip
 import hashlib
 import json
 import os
+import shutil
 import time
 import uuid
 from datetime import date, datetime, timedelta
@@ -17,8 +18,10 @@ from zoneinfo import ZoneInfo
 from psycopg.types.json import Jsonb
 
 import discovery
+import raw_control
+import raw_pages
 from corpus import connect
-from research import ROOT, digest, interpret, interpretation_config, read
+from research import ROOT, digest, interpret, interpretation_config, read, require_interpretation
 from routes import capture_url, collect, history_roster_file
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -26,8 +29,14 @@ TERMINAL = ("done", "partial", "failed")
 
 
 def create(kind, label, scope, targets, definition, owner="cli", ident=None):
+    if kind == "interpret":
+        require_interpretation()
     ident = ident or str(uuid.uuid4())
     with connect() as c:
+        if kind in ("history","daily"):
+            c.execute("SELECT singleton FROM collection_control FOR SHARE")
+            if not raw_control.allowed(c,kind):
+                raise ValueError("Collection is stopped")
         inserted = c.execute(
             """INSERT INTO plans(id,kind,label,scope,state,input,owner)
           VALUES (%s,%s,%s,%s,'queued',%s,%s) ON CONFLICT DO NOTHING RETURNING id""",
@@ -72,12 +81,15 @@ def history(limit=None, year=None, source="net", media=(), media_only=False):
     work = (
         [] if media_only else [{"type": "horse", "source": source, **h} for h in horses]
     )
-    years = sorted({y for h in horses for y in h["years"]})
+    if not limit and not media and not media_only:
+        media = tuple(discovery.MEDIA)
+    seeds = []
+    years = sorted({y for h in horses for y in h["years"]}, reverse=True)
     for site in media:
         if site not in discovery.MEDIA:
             raise ValueError(site)
         if site != "radio":
-            work.append(
+            seeds.append(
                 {
                     "type": "media",
                     "source": site,
@@ -87,10 +99,10 @@ def history(limit=None, year=None, source="net", media=(), media_only=False):
             )
             continue
         for y in years:
-            for month in range(1, 13):
+            for month in range(12, 0, -1):
                 day = date(int(y), month, 1)
                 if day <= date.today():
-                    work.append(
+                    seeds.append(
                         {
                             "type": "media",
                             "source": site,
@@ -98,6 +110,9 @@ def history(limit=None, year=None, source="net", media=(), media_only=False):
                             "limit": 20,
                         }
                     )
+    # Expose both horse names and all media at startup, including the current archive month.
+    seeds.sort(key=lambda t: (t["day"][:7] != datetime.now(JST).strftime("%Y-%m"), t["source"]))
+    work = [v for pair in zip(work[:len(seeds)],seeds) for v in pair] + seeds[len(work):] + work[len(seeds):]
     definition = {
         "roster": "history-jra",
         "roster_size": len(data["horses"]),
@@ -178,10 +193,11 @@ def coverage(path):
 def daily(
     day,
     scope="operation",
-    sources=("radio", "book", "hochi", "daily"),
+    sources=None,
     name_budget=None,
 ):
     on = date.fromisoformat(day)
+    sources = sources or tuple(discovery.MEDIA)
     if not sources or any(s not in discovery.MEDIA for s in sources):
         raise ValueError("choose supported media")
     if scope == "review":
@@ -196,7 +212,8 @@ def daily(
         {"type": "calendar", "day": (on + timedelta(days=i)).isoformat()}
         for i in sorted(set(offsets))
     ]
-    work.extend(
+    calendars = work
+    work = list(
         {
             "type": "media",
             "day": day,
@@ -206,6 +223,16 @@ def daily(
         }
         for s in sources
     )
+    work.extend(calendars)
+    if scope == "operation" and "radio" in sources:
+        with connect() as c:
+            last = c.execute("""SELECT max(data->>'day') AS day FROM observations WHERE family='listings'
+                 AND data->>'channel'='radio/' AND data->>'status'='ok' AND data->>'day'<%s""",(day,)).fetchone()["day"]
+        start = min(date.fromisoformat(last), on-timedelta(days=8)) if last else on-timedelta(days=8)
+        month = start.replace(day=1)
+        while month < on.replace(day=1):
+            work.append(dict(type="media", source="radio", day=month.isoformat(),limit=16))
+            month = (month + timedelta(days=32)).replace(day=1)
     uid = (
         str(uuid.uuid5(uuid.NAMESPACE_URL, "keiba-nlp/daily/" + day))
         if scope == "operation"
@@ -250,6 +277,7 @@ def pending_captures(limit, cooldown=False):
 
 
 def interpretation(captures=None, limit=None, scope="bounded"):
+    require_interpretation()
     if captures is None:
         captures = pending_captures(limit)
     return create(
@@ -264,6 +292,9 @@ def interpretation(captures=None, limit=None, scope="bounded"):
 def execute(target, p, *, recover_orphan=False):
     typ = target["type"]
     more = []
+    production = p["scope"] == "operation" and p["kind"] in ("history","daily")
+    if production and typ in ("horse","media","page"):
+        return raw_pages.page_step(target,p)
     if typ == "horse":
         r = discovery.horse_route(
             target, target.get("source", "net"), target.get("limit", 4)
@@ -273,6 +304,7 @@ def execute(target, p, *, recover_orphan=False):
         good = hit["status"] in ("ok", "partial")
         r = {
             "route_status": hit["status"],
+            "retry_after": hit.get("retry_after"), "service_failure": hit.get("service_failure",False),
             "hits": [hit],
             "saved": int(good and not hit["known"]),
             "known": int(hit["known"]),
@@ -295,7 +327,9 @@ def execute(target, p, *, recover_orphan=False):
                 }
             )
     elif typ == "listing":
-        b = collect(target["listing_id"], target["offset"], 20)
+        b = collect(target["listing_id"], target["offset"], target.get("limit",20),
+                    revisit="updates" if production and p["kind"]=="daily" else False,
+                    stop_check=(lambda: raw_control.stopped(p["id"])) if production else None)
         batch = read("batches", b["batch_id"])
         n = b["counts"]
         r = {
@@ -313,8 +347,13 @@ def execute(target, p, *, recover_orphan=False):
             "next_offset": b["next_offset"],
             "retry_after": b["retry_after"],
         }
-        if b["remaining"] and b["next_offset"] > target["offset"] and not r["failed"]:
-            more.append({**target, "offset": b["next_offset"]})
+        if production:
+            r.update(deferred=b.get("deferred"), retry_after=b.get("retry_after"), service_failure=b.get("service_failure",False))
+            r["stopped_before_batch"] = b.get("stopped") and b["next_offset"] == target["offset"]
+            if r["deferred"]:
+                r["failed"] -= 1
+        if b["remaining"] and b["next_offset"] > target["offset"] and (production or not r["failed"]):
+            more.append({**target, "offset": b["next_offset"], "queue_key": f"slice/{target['listing_id']}/{b['next_offset']}"})
     elif typ == "interpret":
         # Shared with the native Cron invocation. Separate processes cannot claim this GPU slot at once.
         options = {}
@@ -360,7 +399,7 @@ def execute(target, p, *, recover_orphan=False):
         }
     elif typ == "card":
         r = discovery.card(target, p["scope"], p["created_at"])
-        for name in r["added"]:
+        for name in r["names"] if production else r["added"]:
             more.append(
                 {
                     "type": "horse",
@@ -368,6 +407,7 @@ def execute(target, p, *, recover_orphan=False):
                     "source": "net",
                     "race": target["race"],
                     "day": target["key"][:8],
+                    "origin": target["key"], "stage": target["stage"],
                     "limit": 2,
                 }
             )
@@ -387,21 +427,16 @@ def add_targets(c, p, targets):
         "SELECT coalesce(max(position),-1)+1 n FROM work_items WHERE plan_id=%s",
         (ident,),
     ).fetchone()["n"]
-    names = {
-        r["name"]
-        for r in c.execute(
-            "SELECT target->>'name' name FROM work_items WHERE plan_id=%s AND target->>'type'='horse' AND NOT (target ? 'decision')",
-            (ident,),
-        )
-    }
     for target in targets:
         if target["type"] == "horse" and not target.get("decision"):
             budget = p["input"].get("name_budget")
-            if target["name"] in names or (budget is not None and len(names) >= budget):
+            if c.execute("""SELECT 1 FROM work_items WHERE plan_id=%s AND target->>'type'='horse'
+                    AND target->>'name'=%s AND NOT (target ? 'decision') LIMIT 1""",(ident,target["name"])).fetchone():
                 continue
-            names.add(target["name"])
+            if budget is not None and c.execute("SELECT count(*) n FROM work_items WHERE plan_id=%s AND target->>'type'='horse' AND NOT (target ? 'decision')",(ident,)).fetchone()["n"] >= budget:
+                continue
         c.execute(
-            "INSERT INTO work_items(plan_id,position,target) VALUES (%s,%s,%s)",
+            "INSERT INTO work_items(plan_id,position,target) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
             (ident, pos, Jsonb(target)),
         )
         pos += 1
@@ -410,7 +445,8 @@ def add_targets(c, p, targets):
 def request_stop(ident):
     with connect() as c:
         c.execute(
-            "UPDATE plans SET stop_requested=true,updated_at=now() WHERE id=%s AND state IN ('running','queued','paused')",
+            """UPDATE plans SET stop_requested=true,state=CASE WHEN state='running' THEN state ELSE 'paused' END,
+               updated_at=now() WHERE id=%s AND state IN ('running','queued','paused','waiting')""",
             (ident,),
         )
     return status(ident)
@@ -482,13 +518,17 @@ def run(ident, steps=None, respect_stop=False):
         if not p:
             raise ValueError("unknown plan")
         fixed = p["scope"] == "saved_versions"
-        respect_stop = respect_stop or fixed
+        collecting = p["kind"] in ("history","daily")
+        if p["kind"] == "interpret":
+            require_interpretation()
+        if collecting and not raw_control.allowed(c,p["kind"],p):
+            return status(ident)
         if p["state"] in TERMINAL:
             return status(ident)
         started = c.execute(
             """UPDATE plans SET state='running',started_at=coalesce(started_at,now()),ended_at=NULL,
-               stop_requested=false,updated_at=now() WHERE id=%s AND (NOT %s OR NOT stop_requested)""",
-            (ident, respect_stop),
+               updated_at=now() WHERE id=%s AND NOT stop_requested""",
+            (ident,),
         )
         if not started.rowcount:
             return status(ident)
@@ -497,18 +537,33 @@ def run(ident, steps=None, respect_stop=False):
             stop = c.execute(
                 "SELECT stop_requested FROM plans WHERE id=%s", (ident,)
             ).fetchone()["stop_requested"]
+            if stop or (collecting and not raw_control.allowed(c,p["kind"])):
+                c.execute("UPDATE plans SET state='paused',updated_at=now() WHERE id=%s", (ident,))
+                break
             priority = "position"
             if p["kind"] == "interpret" and p["scope"] == "finite":
                 # Alternate source plans while both have pending versions, including late arrivals.
                 priority = """(SELECT count(*) FROM work_items done WHERE done.plan_id=w.plan_id
                     AND done.state IN ('done','failed','partial') AND done.target->>'origin'=w.target->>'origin'), position"""
-            item = c.execute(
-                "SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working') ORDER BY "
-                + priority
-                + " LIMIT 1",
-                (ident,),
-            ).fetchone()
+            if collecting:
+                eligible = """SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working')
+                    AND (ready_at IS NULL OR ready_at<=now()) AND NOT EXISTS
+                    (SELECT FROM route_waits h WHERE h.source IN ('*',w.target->>'source') AND h.retry_at>now())"""
+                # Spend most turns consuming already discovered pages, while regularly starting roster seeds.
+                lane = " AND (target ? 'queue_key')" if n % 5 else ""
+                item = c.execute(eligible + lane + " ORDER BY position LIMIT 1",(ident,)).fetchone()
+                if not item and lane:
+                    item = c.execute(eligible+" ORDER BY position LIMIT 1",(ident,)).fetchone()
+            else:
+                item = c.execute("SELECT * FROM work_items w WHERE plan_id=%s AND state IN ('queued','working') ORDER BY "
+                                 +priority+" LIMIT 1",(ident,)).fetchone()
             if not item:
+                if collecting and c.execute("SELECT 1 FROM work_items WHERE plan_id=%s AND state IN ('queued','working') LIMIT 1",(ident,)).fetchone():
+                    c.execute("UPDATE plans SET state='waiting' WHERE id=%s",(ident,))
+                    if steps is not None:
+                        break
+                    time.sleep(15)
+                    continue
                 counts = c.execute(
                     """SELECT count(*) FILTER(WHERE state='done') ok,count(*) FILTER(WHERE state='failed') bad,
                   count(*) FILTER(WHERE state='partial') partial FROM work_items WHERE plan_id=%s""",
@@ -527,17 +582,17 @@ def run(ident, steps=None, respect_stop=False):
                 if not finished.rowcount:
                     continue
                 break
-            if stop or steps is not None and n >= steps:
+            if steps is not None and n >= steps:
                 c.execute(
-                    "UPDATE plans SET state='paused',updated_at=now() WHERE id=%s",
-                    (ident,),
+                    "UPDATE plans SET state=%s,updated_at=now() WHERE id=%s",
+                    ("queued" if collecting else "paused",ident),
                 )
                 break
             if (
                 p["kind"] in ("history", "interpret")
                 and p["scope"] != "finite"
                 and c.execute(
-                    """SELECT 1 FROM plans d WHERE kind='daily' AND state='running' AND EXISTS
+                    """SELECT 1 FROM plans d WHERE kind='daily' AND state='running' AND NOT stop_requested AND EXISTS
                     (SELECT FROM pg_locks l WHERE l.locktype='advisory' AND l.objid=(hashtextextended(d.id::text,0)&4294967295)::oid) LIMIT 1"""
                 ).fetchone()
             ):
@@ -548,8 +603,10 @@ def run(ident, steps=None, respect_stop=False):
                 "UPDATE work_items SET state='working',updated_at=now() WHERE plan_id=%s AND position=%s",
                 (ident, pos),
             )
-            c.execute("UPDATE plans SET updated_at=now() WHERE id=%s", (ident,))
+            c.execute("UPDATE plans SET state='running',updated_at=now() WHERE id=%s", (ident,))
             try:
+                if collecting and shutil.disk_usage(ROOT).free < 512 * 1024**2:
+                    raise OSError("Insufficient disk space to save a collection unit")
                 with plan_actor(p):
                     interrupted = item["state"] == "working" or bool((item["result"] or {}).get("service_failure"))
                     result, more = execute(item["target"], p, recover_orphan=fixed and interrupted)
@@ -572,7 +629,9 @@ def run(ident, steps=None, respect_stop=False):
                 )
             except Exception as e:
                 result, more, state = (
-                    {"error": f"{type(e).__name__}: {e}"[:550], "failed": 1, "service_failure": fixed},
+                    {"error": f"{type(e).__name__}: {e}"[:550], "route_status": str(e) or type(e).__name__,
+                     "retry_after": getattr(e,"retry_after",None), "failed": 1,
+                     "service_failure": fixed or (collecting and not isinstance(e, discovery.Unavailable))},
                     [],
                     "failed",
                 )
@@ -586,6 +645,21 @@ def run(ident, steps=None, respect_stop=False):
                 if pause:
                     state = "queued" if len(attempts) < 2 else "failed"
             with c.transaction():
+                if collecting and result.get("stopped_before_batch"):
+                    state = "queued"
+                deferred = result.get("deferred") or result.get("route_status")
+                if collecting and (result.get("service_failure") or deferred in ("http_429","http_503","cooldown")):
+                    from routes import retry_seconds
+                    seconds = retry_seconds(result.get("retry_after"),300 if result.get("service_failure") else 90)
+                    source = "*" if result.get("service_failure") else item["target"].get("source","calendar")
+                    c.execute("""INSERT INTO route_waits VALUES (%s,now()+%s*interval '1 second',%s)
+                       ON CONFLICT(source) DO UPDATE SET retry_at=greatest(route_waits.retry_at,excluded.retry_at),reason=excluded.reason""",
+                       (source,seconds,result.get("error") or deferred))
+                    if not more:
+                        state = "queued"
+                        c.execute("UPDATE work_items SET ready_at=now()+%s*interval '1 second' WHERE plan_id=%s AND position=%s",(seconds,ident,pos))
+                    elif not result.get("failed"):
+                        state = "done"
                 add_targets(c, p, more)
                 c.execute(
                     "UPDATE work_items SET state=%s,result=%s,updated_at=now() WHERE plan_id=%s AND position=%s",
@@ -635,7 +709,7 @@ def main():
             a.limit,
             a.year,
             a.source,
-            a.media or (() if a.limit and not a.media_only else ("radio",)),
+            a.media or (("radio",) if a.media_only else ()),
             a.media_only,
         )
     elif a.cmd == "coverage":

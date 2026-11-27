@@ -5,6 +5,8 @@ After=nlp-hermes.service
 
 [Service]
 Type=oneshot
+ExecStartPre=/usr/bin/podman exec --user 10000:10000 nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py due-daily
+ExecStartPre=/usr/bin/systemctl --no-block start nlp-daily-raw.service
 ExecStart=/usr/bin/podman exec --user 10000:10000 --env KEIBA_MODEL_RESERVED=1 nlp-hermes flock /var/lib/keiba/local-model.lock hermes cron tick
-ExecStartPost=/usr/bin/podman exec --user 10000:10000 --env KEIBA_RESEARCH_ACTOR=server-worker nlp-hermes /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py daily
+ExecStartPost=/usr/bin/systemctl --no-block start nlp-daily-raw.service
 TimeoutStartSec=infinity

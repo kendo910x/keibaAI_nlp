@@ -1,0 +1,44 @@
+#!/bin/bash
+# VM15 operator CLI; operator intent lives in the production database.
+set -euo pipefail
+container=nlp-hermes
+call() { podman exec --user 10000:10000 "$container" "$@"; }
+ops() { call /opt/nlp-db/venv/bin/python -B /opt/keiba/operations.py "$@"; }
+query() { podman exec -u postgres nlp-postgres psql -XAtq -v ON_ERROR_STOP=1 -d keiba_nlp -c "$1"; }
+history_id() { query "SELECT id FROM collection.plans WHERE kind='history' AND scope='operation' ORDER BY created_at DESC LIMIT 1"; }
+cron_id() { python3 -c 'import json; from pathlib import Path; p=Path("/srv/nlp/hermes/cron/jobs.json"); j=[x for x in json.loads(p.read_bytes())["jobs"] if x.get("name")=="keiba-morning"]; assert len(j)==1; print(j[0]["id"])'; }
+action=${1:-status}
+case "$action" in
+ status)
+    ops status
+    python3 -c 'from pathlib import Path; import json; p=Path("/srv/nlp/hermes/cron/jobs.json"); print([{k:j.get(k) for k in ("id","name","enabled","next_run_at","next_run")} for j in (json.loads(p.read_bytes())["jobs"] if p.exists() else []) if j.get("name")=="keiba-morning"])'
+    ;;
+ pause-history)
+    ops pause-history
+    systemctl stop nlp-history-choice.service
+    ;;
+ resume-history)
+    ops resume-history
+    systemctl start --no-block "nlp-plan@$(history_id).service"
+    ;;
+ pause-all)
+    ops pause-all
+    systemctl disable --now nlp-hermes-tick.timer
+    call hermes cron pause "$(cron_id)"
+    # Allow the last short collection unit to commit. A killed unit stays at its persisted cursor.
+    for i in {1..25}; do
+        test "$(query "SELECT count(*) FROM collection.plans WHERE kind IN ('daily','history') AND state='running'")" = 0 && break
+        sleep 2
+    done
+    systemctl stop --no-block nlp-hermes-tick.service nlp-history-choice.service nlp-daily-raw.service
+    systemctl restart nlp-hermes.service
+    ;;
+ resume-all)
+    ops resume-all
+    call hermes cron resume "$(cron_id)"
+    call /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py daily
+    systemctl enable --now nlp-hermes-tick.timer
+    systemctl start --no-block "nlp-plan@$(history_id).service" nlp-daily-raw.service
+    ;;
+ *) echo "usage: nlp-collectionctl {status|pause-history|resume-history|pause-all|resume-all}" >&2; exit 2 ;;
+esac

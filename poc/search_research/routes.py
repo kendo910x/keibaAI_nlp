@@ -23,6 +23,10 @@ HEADERS = {"User-Agent": "KeibaNLPResearch/1.0"}
 REQUEST_INTERVAL_SECONDS = 1.0
 LAST_REQUEST = {}
 PUBLIC_ARTICLE_LAYOUTS = {
+    ("keiba.sponichi.co.jp", "/news/"): (
+        ".article-topics p.article-texts", "h1.title-main-heading", "time"),
+    ("www.keibalab.jp", "/topics/"): (
+        "section.articleBody", ".post h1", "time"),
     ("umatoku.hochi.co.jp", "/articles/"): (
         "article.news-article p.article__text", "article.news-article h1", "time.note__pubdate"),
     ("www.radionikkei.jp", "/keiba_article/news/"): (
@@ -97,14 +101,19 @@ def server_pace(host, retry_seconds=None):
         state.write(f"{last} {cooldown}")
 
 
+def retry_seconds(header, default=60):
+    try:
+        return max(1,int(header))
+    except (TypeError, ValueError):
+        try:
+            return max(1,int(parsedate_to_datetime(header).timestamp()-time.time()))
+        except (TypeError, ValueError, OverflowError):
+            return default
+
+
 def record_limit(url, status, header):
     if SERVER and status in (429,503):
-        try:
-            seconds = int(header)
-        except (TypeError,ValueError):
-            try: seconds = parsedate_to_datetime(header).timestamp()-time.time()
-            except (TypeError,ValueError,OverflowError): seconds=60
-        server_pace(urlsplit(url).netloc,max(1,seconds))
+        server_pace(urlsplit(url).netloc,retry_seconds(header))
 
 
 def get_html(url):
@@ -266,10 +275,13 @@ def article(subject, url, title, listing_id=None):
             for node in part.select("script, style, template, [hidden], [aria-hidden=true], .mov_btn"):
                 node.decompose()
         text = "\n".join(part.get_text("\n", strip=True) for part in parts).strip()
-        if not re.search(r"\w", text) or re.search(r"続きを読むには.{0,15}(?:登録|ログイン)|ここから先は有料", text):
+        wall = re.search(r"続きを読むには.{0,15}(?:登録|ログイン)|ここから先は有料", text)
+        if wall:
+            text = text[:wall.start()].strip()
+        if not re.search(r"\w", text) or (wall and text.strip() == title.strip()):
             raise Unavailable("no_public_article_body")
         notice = main.find_next_sibling(class_="NewsReadMore")
-        preview = bool(notice and re.search(r"登録|ログイン|有料", notice.get_text(strip=True)))
+        preview = bool(wall or (notice and re.search(r"登録|ログイン|有料", notice.get_text(strip=True))))
         heading = soup.select_one(layout[1] if layout else
                                   ".NewsArticle_Header h1, .news_title h1, h1.entry-title, article h1")
         if jra_result:
@@ -290,7 +302,8 @@ def article(subject, url, title, listing_id=None):
         if layout:
             rec["source_selector"] = layout[0]
     except (Unavailable, httpx.HTTPError, OSError, ValueError) as exc:
-        rec["status"] = str(exc)
+        rec["status"] = str(exc) or type(exc).__name__
+        rec["service_failure"] = isinstance(exc, (httpx.TransportError, OSError))
         if getattr(exc, "retry_after", None):
             rec["retry_after"] = exc.retry_after
     rec.update(observed_at=now(), seconds=round(time.monotonic()-start, 2))
@@ -298,7 +311,7 @@ def article(subject, url, title, listing_id=None):
     return rec
 
 
-def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = False) -> dict:
+def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = False, *, stop_check=None) -> dict:
     """Save a slice of a listing, skip known URLs and return the next zero-based offset."""
     source = read("listings", listing_id)
     if offset < 0 or not 1 <= limit <= 100 or offset > len(source["candidates"]):
@@ -308,9 +321,15 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
     results = []
     retry_current = False
     retry_after = None
+    service_failure = False
+    stopped = False
     for hit in source["candidates"][offset:offset + limit]:
+        if stop_check and stop_check():
+            stopped = True
+            break
         key = url_key(hit["url"])
-        if not revisit and key in known:
+        update = revisit is True or (revisit == "updates" and bool(re.search("更新|訂正|追記", hit.get("title",""))))
+        if not update and key in known:
             results.append(dict(url=hit["url"], status="known", capture_id=known[key]))
             continue
         rec = article(source["subject"], hit["url"], hit["title"], listing_id)
@@ -318,7 +337,8 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
         results.append(dict(url=hit["url"], status="known" if unchanged else rec["status"], capture_id=rec["id"]))
         if rec["status"] in ("ok", "partial"):
             known[key] = known[url_key(rec["final_url"])] = rec["id"]
-        retry_current = rec["status"] in ("http_429", "http_503","cooldown")
+        service_failure = bool(rec.get("service_failure"))
+        retry_current = service_failure or rec["status"] in ("http_429", "http_503","cooldown")
         if retry_current or rec["status"] in ("http_403", "http_401"):
             retry_after = rec.get("retry_after")
             break
@@ -328,7 +348,9 @@ def collect(listing_id: str, offset: int = 0, limit: int = 20, revisit: bool = F
                   seconds=round(time.monotonic()-start, 2)))
     counts = {s: sum(row["status"] == s for row in results) for s in {row["status"] for row in results}}
     return dict(batch_id=record["id"], counts=counts, next_offset=cursor,
-                remaining=len(source["candidates"])-cursor, retry_after=retry_after, examples=results[:4])
+                remaining=len(source["candidates"])-cursor, retry_after=retry_after, examples=results[:4],
+                deferred=results[-1]["status"] if retry_current else None, service_failure=service_failure,
+                stopped=stopped)
 
 
 def capture_url(subject: str, url: str, title: str = "", revisit: bool = False) -> dict:
@@ -338,7 +360,7 @@ def capture_url(subject: str, url: str, title: str = "", revisit: bool = False) 
     prior = read("captures", prior_id) if prior_id else None
     rec = prior if prior and not revisit else article(subject, url, title)
     return dict(capture_id=rec["id"], status=rec["status"], known=bool(prior and rec.get("version_id")==prior["version_id"]),
-                revisited=bool(prior and revisit),retry_after=rec.get("retry_after"),
+                revisited=bool(prior and revisit),retry_after=rec.get("retry_after"),service_failure=rec.get("service_failure",False),
                 url=rec.get("final_url", url), title=rec["title"], chars=len(rec.get("body", "")))
 
 

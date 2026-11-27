@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from corpus import connect
 from horse_view import horse_key, render_horse_card
+import raw_control
 from profile_db import PROFILES, database, trial
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -32,6 +33,7 @@ ST = {
     "working": "処理中",
     "running": "実行中",
     "paused": "中断・再開可",
+    "waiting": "再試行待ち",
     "ok": "接続確認",
     "off": "停止",
     "enabled": "有効",
@@ -216,7 +218,7 @@ def schedules():
         ("absent", None)
         if prod is None
         else (
-            ("enabled", prod.get("next_run_at"))
+            ("enabled", prod.get("next_run") or prod.get("next_run_at"))
             if prod.get("enabled")
             else ("disabled", None)
         )
@@ -404,6 +406,16 @@ def home(c):
             )
         )
     h += panel("現在の処理", rows(cp) if cp else "待機中")
+    if not trial():
+        flags = raw_control.controls(c)
+        h += panel("原文収集", rows([
+            ("運転状態", "全収集を手動停止" if flags["all_paused"] else
+             "過去収集を手動停止・日次は有効" if flags["history_paused"] else "原文を収集中"),
+            ("記事解釈", "保留・馬別要約の生成は未起動"),
+        ]))
+        media = c.execute("SELECT host,count(*) n FROM versions GROUP BY host ORDER BY n DESC").fetchall()
+        if media:
+            h += panel("媒体別の保存本文版",rows([(ESC(site(m["host"])),m["n"]) for m in media]))
     recent_problems = [r for r in health if r["state"] == "failed"]
     if recent_problems:
         h += panel(
@@ -1234,6 +1246,16 @@ def run_detail(c, ident, q):
     )
     if p["kind"] in ("history", "daily"):
         h = source_summary(c, ident, p["kind"]) + h
+        if p["scope"] == "operation":
+            progress = raw_control.progress(c,ident)
+            waits = c.execute("SELECT source,reason,retry_at FROM route_waits WHERE retry_at>now() ORDER BY retry_at").fetchall()
+            fields = [("未取得の既発見候補",f"{progress['candidates']:,} 件"),
+                      ("待機対象 / 失敗単位",f"{progress['held']:,} / {progress['failures']:,}"),
+                      ("直近の作業完了 JST",stamp(progress["last_finished"]))]
+            if p["kind"]=="history":
+                fields.insert(0,("名簿の初回探索済み / 残る馬",f"{progress['searched']:,} / {progress['horses']-progress['searched']:,} 頭"))
+            fields.extend((ESC(w["source"]+" の待機"),ESC(w["reason"])+"　"+stamp(w["retry_at"])) for w in waits)
+            h += panel("原文収集の進捗・記事解釈は保留",rows(fields))
     fixed = p["scope"] == "saved_versions"
     if fixed:
         s = saved_progress(c, ident)

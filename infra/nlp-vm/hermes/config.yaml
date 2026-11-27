@@ -96,7 +96,7 @@ mcp_servers:
     command: /opt/nlp-db/venv/bin/python
     args: [-B, /opt/nlp-db/server.py]
     tools:
-      include: [find_articles, get_article, save_article, find_horses, save_horse, find_races, save_race, save_targets, save_slices, get_runs, save_run]
+      include: [find_articles, get_article, find_horses, find_races, get_runs]
       resources: false
       prompts: false
     sampling: {enabled: false}

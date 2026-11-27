@@ -1,0 +1,10 @@
+[Unit]
+Description=Hermes discovery choices for the production historical roster
+Requires=nlp-hermes.service
+After=nlp-hermes.service nlp-postgres.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/podman exec --user 10000:10000 nlp-hermes setsid --wait /bin/sh /opt/nlp-research/history-choice.sh
+ExecStop=-/usr/bin/podman exec --user 10000:10000 nlp-hermes /bin/sh /opt/nlp-research/history-choice.sh stop
+Restart=no

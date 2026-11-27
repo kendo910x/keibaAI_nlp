@@ -7,7 +7,7 @@ from urllib.parse import quote, urljoin
 
 from corpus import article_day, connect
 from research import now, read, save
-from routes import capture_url, get_html, rendered_html, roster_page, url_key
+from routes import Unavailable, capture_url, get_html, rendered_html, roster_page, url_key
 
 VENUES = dict(
     zip(
@@ -27,6 +27,9 @@ VENUES = dict(
     )
 )
 MEDIA = {
+    "sponichi": ("https://keiba.sponichi.co.jp/news/", ".figure-list-title a[href]"),
+    "lab": ("https://www.keibalab.jp/topics/backnumber.html", ".indexContentsList a[href*='/topics/']"),
+    "keibana": ("https://keibana.com/news/", "a.c-news__link[href*='/news/']"),
     "radio": (
         "https://www.radionikkei.jp/keiba_article/news/{year}/{month:02}/",
         "a.category-list-item-link",
@@ -293,6 +296,7 @@ def card(target, scope="lookup", previous_before=None):
         "observations": [o["observation_id"]],
         "count": len(rows),
         "added": added,
+        "names": [r["name"] for r in rows],
         "roster": roster,
         "route_status": "ok" if rows else "no_matching_links",
     }
