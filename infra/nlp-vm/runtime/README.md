@@ -2,7 +2,7 @@
 
 本番の資料庫を空に戻し、旧研究を復元検証した私有退避物と新しい検証用資料庫を分けた。LANの閲覧画面は [本番](http://192.168.0.14:8786/) と [検証](http://192.168.0.14:8787/)。本番の全名簿、毎朝予定、常駐解釈の開始には個別指示を要する。
 
-2026-11-27の馬別一覧は `ff43ac3` にリポジトリ側の実装があり、実機配備は未実施として報告された。その後の合意に基づき3つのSkillと規約を改訂した。次はCodexが[配備・馬別要約・解釈時間の比較検証指示書](../../../docs/instructions/2026-11/2026-11-27_nlp_summary_skills_validation_instruction.md)に従い、保存記事6件前後を実機で比較する。今回のMarkdown改訂だけで処理は開始していない。[前回の実装レポート](../../../docs/reports/2026-11/2026-11-27_nlp_horse_summary_implementation_report.md)
+2026年11月27日に `5bf07b0` の馬別一覧と3つの改訂Skillを配備した。現地の検索Skillの追記を取り込んだ最終実機RELEASEは `abffeba`。以前の2,438版の解釈計画は記事を保存した区切りで一時停止した。取得IDを固定した6件の比較も終了し、検証用8787番で新しい24要約を閲覧できる。[馬別一覧](http://192.168.0.14:8787/horses) ・ [配備と旧新比較の実機レポート](../../../docs/reports/2026-11/2026-11-27_nlp_summary_skills_validation_report.md)
 
 | 用途 | 本番 | 有限試験 |
 |---|---|---|
@@ -10,12 +10,14 @@
 | 書込・閲覧 | nlp_app / nlp_viewer | nlp_trial_app / nlp_trial_viewer |
 | 本文と再開情報 | /srv/nlp/runtime/data | /srv/nlp/trial/data |
 | Hermes・Skill・セッション・Cron | /srv/nlp/hermes | /srv/nlp/trial/hermes |
-| 毎朝の起動 | 本番予定は未登録 | 1回限定の試験予定 |
+| 毎朝の起動 | 本番予定は未登録 | 単発の収集予定は完了・無効 |
 | Dashboard | nlp-dashboard、8786 | nlp-dashboard-trial、8787 |
 
 両環境の内部パスは /var/lib/keiba と /opt/data。過去名簿は共有の読取専用入力 /srv/nlp/runtime/work/inputs/history-jra.json.gz に配置し、日々の名簿・観測とは分ける。各サービスには対象DB名を記した読取り専用の /run/keiba/database と、その用途の秘密1個だけをマウントする。旧MCPも同じ設定を使う。再取込は現在のデータマウントだけを読む。旧資料は /srv/nlp/backups/two-pattern-20261127/ に保管し、復元確認DBは接続停止。過去報告の本番Dashboard記事リンクは退避前の履歴を指す。
 
-検証では /srv/nlp/trial/request.json に実行日 day と名簿の先頭頭数 history_limit を設定する。通常の朝プロンプトを検証用Hermesで1度起動し、過去用には指定範囲を history_prepare に渡す。両方の収集計画を作成した後、検証コンテナで operations.py finite <過去計画ID> <日次計画ID> が該当する保存版を順次解釈する。取得再利用も計画に結び付け、同じ版は1回処理する。両方の収集が終了し解釈待ちがなくなると終了する。試行の再開は同じ計画ID・JST日を用いる。
+先行する2つの収集試行では `/srv/nlp/trial/request.json` に実行日 `day` と名簿の先頭頭数 `history_limit` を指定し、検証用Hermesで朝プロンプトを1回起動した。過去用の指定範囲は `history_prepare` に渡した。この試行の `operations.py finite <過去計画ID> <日次計画ID>` は、既知URLの再利用も含め、両計画に属する全保存版を対象にする。計画IDとJST実行日は引き続き履歴に残っている。
+
+改訂Skillの比較では、事前に固定した取得IDごとに `collection_mcp.interpret(capture_id, fresh=True)` を旧新各1回呼んだ。旧計画の待機2,336件は一時停止中で、今回の比較に伴う再開予定はない。
 
 ## 配置と読取り
 
