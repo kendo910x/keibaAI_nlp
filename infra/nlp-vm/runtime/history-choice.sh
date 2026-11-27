@@ -14,4 +14,4 @@ fi
 echo "$$" >"$pidfile"
 trap 'rm -f "$pidfile"' EXIT
 cd /opt/nlp-research
-flock /var/lib/keiba/local-model.lock hermes chat --oneshot -Q --toolsets skills,mcp-collection -s keiba-search -s keiba-coordinate --max-turns 14 --query-file /opt/nlp-research/history.prompt.txt
+flock /var/lib/keiba/local-model.lock hermes chat --oneshot -Q -s keiba-search -s keiba-coordinate --max-turns 14 --query-file /opt/nlp-research/history.prompt.txt

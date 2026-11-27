@@ -81,10 +81,40 @@ def candidates(soup, selector, base):
         )
         title = label.get_text(" ", strip=True)
         parent = a.find_parent(["li", "article"]) or a.parent
-        when = a.select_one("time,.Time") or parent.select_one("time,.Time")
+        when = a.select_one("time,.Time,.date") or parent.select_one("time,.Time,.date")
         raw = (when.get("datetime") or when.get_text(" ", strip=True)) if when else ""
+        if not raw:
+            for text in parent.stripped_strings:
+                if re.fullmatch(
+                    r"(?:20\d\d[年/.-])?\d{1,2}[月/]\d{1,2}日?(?:\s*[(（][月火水木金土日][)）])?",
+                    text,
+                ):
+                    raw = text
+                    break
         found.setdefault(key, dict(url=link, title=title[:240], date_label=raw))
     return list(found.values())
+
+
+def navigation_day(raw, observed):
+    """Estimate only the listing frontier; never assign this estimate to the article."""
+    day = article_day(raw)
+    if day:
+        return day
+    relative = re.fullmatch(r"(\d+)\s*(時間|分|日)前", raw.strip())
+    if relative:
+        return observed - timedelta(days=int(relative[1]) if relative[2] == "日" else 0)
+    md = re.match(r"^(\d{1,2})[/月](\d{1,2})(?:日|\s|\(|（|$)", raw.strip())
+    if md:
+        try:
+            day = date(observed.year, int(md[1]), int(md[2]))
+            return (
+                day.replace(year=day.year - 1)
+                if day > observed + timedelta(days=7)
+                else day
+            )
+        except ValueError:
+            pass
+    return None
 
 
 def page_step(target, plan):
@@ -178,7 +208,10 @@ def page_step(target, plan):
     overlap = False
     if data["day"] and data["candidates"]:
         dates = [
-            article_day(hit["date_label"] or hit["url"]) for hit in data["candidates"]
+            navigation_day(
+                hit["date_label"] or hit["url"], date.fromisoformat(data["day"])
+            )
+            for hit in data["candidates"]
         ]
         if all(dates) and max(dates) < date.fromisoformat(data["day"]) - timedelta(
             days=8

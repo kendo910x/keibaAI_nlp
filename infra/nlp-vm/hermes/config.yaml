@@ -76,7 +76,7 @@ tools:
   tool_search:
     enabled: "off"
 platform_toolsets:
-  cli: [skills, memory, session_search, delegation, mcp-collection, mcp-nlpdb, mcp-shared]
+  cli: [skills, delegation, mcp-collection]
   cron: [skills, delegation, mcp-collection]
 mcp_servers:
   collection:
@@ -97,13 +97,6 @@ mcp_servers:
     args: [-B, /opt/nlp-db/server.py]
     tools:
       include: [find_articles, get_article, find_horses, find_races, get_runs]
-      resources: false
-      prompts: false
-    sampling: {enabled: false}
-  shared:
-    url: http://192.168.0.11:30081/mcp
-    tools:
-      include: [fetch_page, yahoo_search]
       resources: false
       prompts: false
     sampling: {enabled: false}

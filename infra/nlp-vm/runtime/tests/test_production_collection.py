@@ -27,7 +27,7 @@ class RawRouteTests(unittest.TestCase):
     def test_visible_navigation_and_complete_saved_candidates(self):
         root = "https://www.keibalab.jp/topics/backnumber.html"
         page = BeautifulSoup(
-            '<ul class="indexContentsList"><li><a href="/topics/1/">一</a></li><li><a href="/topics/2/">二</a></li></ul><ul class="pager"><li class="next"><a href="?page=2">NEXT »</a></li></ul>',
+            '<ul class="indexContentsList"><li><a href="/topics/9/">共通欄</a></li></ul><ul class="tabList"><li><a href="/topics/1/">一</a></li><li><a href="/topics/2/">二</a></li></ul><ul class="pager"><li class="next"><a href="?page=2">NEXT »</a></li></ul>',
             "html.parser",
         )
         saved = {}

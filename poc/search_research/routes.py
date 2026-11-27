@@ -26,7 +26,9 @@ PUBLIC_ARTICLE_LAYOUTS = {
     ("keiba.sponichi.co.jp", "/news/"): (
         ".article-topics p.article-texts", "h1.title-main-heading", "time"),
     ("www.keibalab.jp", "/topics/"): (
-        "section.articleBody", ".post h1", "time"),
+        "section.articleBody", ".post h1", ".post p.date"),
+    ("keibana.com", "/news/"): (
+        ".news__detail__article", ".news__detail h3.head", ".news__detail .date"),
     ("umatoku.hochi.co.jp", "/articles/"): (
         "article.news-article p.article__text", "article.news-article h1", "time.note__pubdate"),
     ("www.radionikkei.jp", "/keiba_article/news/"): (
@@ -250,6 +252,21 @@ def article(subject, url, title, listing_id=None):
         if links_only(final):
             raise Unavailable("metadata_only")
         location = urlsplit(final)
+        public_preview = False
+        if location.hostname == "keibana.com":
+            full = soup.select_one(".news__detail__article .btn-detail a[href]")
+            if full and "記事全文" in full.get_text(strip=True):
+                dest = urljoin(final, full["href"])
+                same_article = (urlsplit(dest).hostname,urlsplit(dest).path) == (location.hostname,location.path)
+                public_preview = True
+                if same_article and url_key(dest)!=url_key(final):
+                    try:
+                        opened, whole = get_html(dest)
+                        if whole.select_one(".news__detail__article") and not whole.select_one(".news__detail__article .btn-detail"):
+                            final,soup,public_preview = opened,whole,False
+                    except Unavailable as exc:
+                        if str(exc) not in ("http_401","http_403","http_404"):
+                            raise
         layout = next((selectors for (host, prefix), selectors in PUBLIC_ARTICLE_LAYOUTS.items()
                        if location.hostname == host and location.path.startswith(prefix)), None)
         if layout:
@@ -272,7 +289,7 @@ def article(subject, url, title, listing_id=None):
             raise Unavailable("article_element_missing")
         main = parts[0]
         for part in parts:
-            for node in part.select("script, style, template, [hidden], [aria-hidden=true], .mov_btn"):
+            for node in part.select("script, style, template, [hidden], [aria-hidden=true], .mov_btn, .btn-detail"):
                 node.decompose()
         text = "\n".join(part.get_text("\n", strip=True) for part in parts).strip()
         wall = re.search(r"続きを読むには.{0,15}(?:登録|ログイン)|ここから先は有料", text)
@@ -281,7 +298,7 @@ def article(subject, url, title, listing_id=None):
         if not re.search(r"\w", text) or (wall and text.strip() == title.strip()):
             raise Unavailable("no_public_article_body")
         notice = main.find_next_sibling(class_="NewsReadMore")
-        preview = bool(wall or (notice and re.search(r"登録|ログイン|有料", notice.get_text(strip=True))))
+        preview = bool(public_preview or wall or (notice and re.search(r"登録|ログイン|有料", notice.get_text(strip=True))))
         heading = soup.select_one(layout[1] if layout else
                                   ".NewsArticle_Header h1, .news_title h1, h1.entry-title, article h1")
         if jra_result:

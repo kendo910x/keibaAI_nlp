@@ -28,7 +28,7 @@ VENUES = dict(
 )
 MEDIA = {
     "sponichi": ("https://keiba.sponichi.co.jp/news/", ".figure-list-title a[href]"),
-    "lab": ("https://www.keibalab.jp/topics/backnumber.html", ".indexContentsList a[href*='/topics/']"),
+    "lab": ("https://www.keibalab.jp/topics/backnumber.html", ".tabList li a[href*='/topics/']"),
     "keibana": ("https://keibana.com/news/", "a.c-news__link[href*='/news/']"),
     "radio": (
         "https://www.radionikkei.jp/keiba_article/news/{year}/{month:02}/",
