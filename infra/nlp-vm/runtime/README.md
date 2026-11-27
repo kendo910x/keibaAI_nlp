@@ -19,6 +19,29 @@
 
 改訂Skillの比較では、事前に固定した取得IDごとに `collection_mcp.interpret(capture_id, fresh=True)` を旧新各1回呼んだ。旧計画の待機2,336件は一時停止中で、今回の比較に伴う再開予定はない。
 
+## 保存済み検証記事の有限解釈
+
+2026年11月27日の新計画は過去馬名検索と日次検索で保存した2,438版を固定し、採用済みの6取得IDを再利用する。実行コードのRELEASEは `6d61f27`。計画の入力、起動時の件数、馬別検索と記事詳細は[実施レポート](../../../docs/reports/2026-11/2026-11-27_nlp_saved_articles_interpretation_report.md)と[実機の進捗](http://192.168.0.14:8787/run/1534dd4e-dc20-5fa3-8753-2a630bebc7b4)で確認できる。
+
+VM15で使うコマンドは以下。通常の終了はワーカーに任せる。途中で停止する必要がある場合は `stop` を使い、処理中の記事が終わるまで待つ。APIや保存先の障害で一時停止した場合も、原因を解消した後に同じIDで再開する。
+
+```bash
+id=1534dd4e-dc20-5fa3-8753-2a630bebc7b4
+unit=nlp-trial-saved-articles-20261127.service
+trial_jobs() { podman exec --user 10000:10000 nlp-hermes-trial /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py "$@"; }
+trial_jobs status "$id"
+systemctl status "$unit"
+# 停止する場合
+trial_jobs stop "$id"
+# 中断位置から再開する場合。現在のunitが停止し、原因を解消した後に実行する。
+trial_jobs resume "$id"
+systemctl start "$unit"
+```
+
+初回は検証コンテナで `saved_articles.py /opt/data/validation-private/saved-articles-20261127/manifest.json /opt/data/validation-private/summary-skills-20261127/accepted.json a16db065-2244-5243-a6e3-87e3a04a9b6f 39ac8473-99ed-5c78-ad3b-70b6ff3ecfcf --versions 2438 --reuse 6` として計画を作成した。同じ入力は同じIDを返す。単発unitが `jobs.py run "$id" --respect-stop` を実行する。未解釈記事の追加探索や次回の定期起動は設定しない。
+
+ワーカーが終了すると `nlp-trial-saved-articles-20261127-report.service` が終了状態を確認する。一巡を終えた計画だけについて、検証コンテナ内で `saved_article_report.py` を使い、固定リスト、全成功版のDB・JSON、読者が使うDashboard、VM側で採取した本番・予定・各unitの状態を照合する。VM上の成果物は `/srv/nlp/trial/hermes/validation-private/saved-articles-20261127/outcome.json` と、同じディレクトリの `report.md`。照合を再実行する場合は `systemctl start nlp-trial-saved-articles-20261127-report.service` を使う。これによるモデル呼出しは0回。
+
 ## 配置と読取り
 
 | 構成 | 通常環境 |
