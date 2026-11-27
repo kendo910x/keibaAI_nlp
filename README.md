@@ -9,7 +9,7 @@
 [最新の実行指示書：2パターン試行とDashboard仕様検討](docs/instructions/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_instruction.md)  
 [先行する指示書：本番清掃・検証領域分離・私的利用方針](docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)
 
-VM15では旧研究の1,303 URL・1,304版と旧56記事を私有バックアップへ復元検証済みです。本番DBを空にしてから、別DB・別資格情報・別Hermesで今回の2試行を開始しました。[検証用資料庫](http://192.168.0.14:8787/) ・ [本番の開始待ち画面](http://192.168.0.14:8786/)
+VM15では旧研究の1,303 URL・1,304版と旧56記事を私有バックアップへ復元検証済みです。本番DBを空にしてから、別DB・別資格情報・別Hermesで今回の2試行を開始しました。[検証用資料庫](http://192.168.0.14:8787/) ・ [本番の開始待ち画面](http://192.168.0.14:8786/) ・ [実機レポートと実画面](docs/reports/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_report.md)
 
 | 項目 | 今回整える状態 |
 |---|---|
