@@ -2,11 +2,11 @@
 
 ## Latest user instruction — 2026-11-27
 
-The current task is a bounded comparison of revised summary skills on saved trial articles. ChatGPT may revise agreed Markdown/skills; Codex performs implementation, deployment, database changes and actual model validation under the written instruction. Loading this contract does not start a job. Use the explicit saved capture IDs supplied for this comparison; do not start collection or the whole interpretation backlog.
+The approved task is one finite pass over the frozen union of the two trial collection plans. Use the 2,438 saved versions and the adopted interpretation skill and settings. Reuse the six accepted results with their original capture IDs. The operator starts a separate plan in the trial profile. Preserve the stopped old plan, source records and results. Do not collect new articles, change the skill during the pass, activate production or schedule repeats.
 
 Use one summary per independently covered horse in each article. A comparison opponent, training partner or horse mentioned only in historical background does not need a separate summary. A multi-horse training or post-race comments article needs a summary for each independently covered horse, not one representative horse. Link each summary to its main subject race. Past-race background in an upcoming-race preview stays in that preview's text and remains pre; a next-race hope in a post-race account does not change its main race from post. The practical roughly-nine-out-of-ten policy remains.
 
-For this comparison, the user permits discarding existing generated trial interpretations. Codex first retains only the small old-output/timing baseline needed for comparison outside normal import/read paths, then removes old interpretation rows and corresponding generated files consistently. Preserve source articles, versions, captures, collection history and stopped plan progress. This permission does not authorize erasing source data, resetting all queues, or starting full reprocessing.
+The earlier six-article comparison and its cleanup are complete. Its private evidence stays outside the import paths. Interrupted work resumes from its saved plan and reuses an exact successful input. Empty summary lists can be successful results.
 
 Production must contain no research or trial data. Preserve the existing new and legacy trial corpus outside production, clean the production data and pending work, and separate test DB credentials, persistent files, Hermes profiles and schedules. A review flag or a display filter is not storage isolation. The administrator performs cleanup; do not execute cleanup merely from loading this contract.
 

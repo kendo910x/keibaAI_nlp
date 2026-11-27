@@ -150,7 +150,8 @@ async def capture(search_id: str, rank: int) -> dict:
 def interpretation_summary(result, capture_id, items, reused):
     return dict(interpretation_id=result["id"], capture_id=capture_id, status=result["status"],
                 count=len(items), horses=list(dict.fromkeys(i["horse"] for i in items if i["horse"])),
-                examples=items[:3], reused=reused, error=result.get("error"))
+                examples=items[:3], reused=reused, error=result.get("error"),
+                service_failure=result.get("service_failure", False))
 
 
 def interpretation_config():
@@ -160,30 +161,57 @@ def interpretation_config():
     return skill, settings
 
 
-async def interpret(capture_id: str, fresh: bool = False) -> dict:
-    """Interpret a saved body with its date label; reuse only an identical successful input."""
-    article = read("captures", capture_id)
-    if "body" not in article or article["status"] not in ("ok", "partial"):
-        return dict(status="no_captured_body", capture_id=capture_id)
-    skill, settings = interpretation_config()
-    result = dict(capture_id=capture_id, version_id=article["version_id"], subject=article["subject"],
-                  skill="keiba-interpret", skill_sha256=digest(skill), settings=settings, started_at=now())
+def interpretation_input(article, skill, settings):
     context = {"掲載・更新欄の表示": article.get("published_label"), "取得観測日時": article["observed_at"]}
     payload = json.dumps({**context, "取得本文": article["body"]}, ensure_ascii=False)
-    result.update(input_format="article-date-v1", date_context=context,
-                  input_key=digest(json.dumps([article["version_id"], payload, skill, settings],
-                                              ensure_ascii=False, sort_keys=True)))
+    key = digest(json.dumps([article["version_id"], payload, skill, settings],
+                            ensure_ascii=False, sort_keys=True))
+    return context, payload, key
+
+
+async def interpret(capture_id: str, fresh: bool = False, *, expected_version=None,
+                    configuration=None, required_result=None, recover_orphan=False) -> dict:
+    """Interpret a saved body with its date label; reuse only an identical successful input."""
+    article = read("captures", capture_id)
+    if expected_version is not None and article.get("version_id") != expected_version:
+        raise ValueError("Saved capture no longer matches the plan version")
+    if "body" not in article or article["status"] not in ("ok", "partial"):
+        if expected_version is not None:
+            raise ValueError("Frozen capture no longer contains its saved body")
+        return dict(status="no_captured_body", capture_id=capture_id)
+    skill, settings = interpretation_config()
+    if configuration is not None and configuration != dict(
+            skill_sha256=digest(skill), settings=settings, endpoint=LLM):
+        raise ValueError("Interpretation configuration differs from the frozen plan")
+    result = dict(capture_id=capture_id, version_id=article["version_id"], subject=article["subject"],
+                  skill="keiba-interpret", skill_sha256=digest(skill), settings=settings, started_at=now())
+    context, payload, key = interpretation_input(article, skill, settings)
+    result.update(input_format="article-date-v1", date_context=context, input_key=key)
     if not fresh:
         if SERVER:
             from corpus import input_success
             prior_id = input_success(result["input_key"])
+            # A process can exit after the atomic JSON write and before its DB commit.
+            if recover_orphan and not prior_id and not required_result:
+                from corpus import record
+                for path in (ROOT / "interpretations").glob("*.json"):
+                    prior = json.loads(path.read_bytes())
+                    if (prior.get("actor") == os.environ.get("KEIBA_RESEARCH_ACTOR")
+                            and prior.get("id") == path.stem and prior.get("capture_id") == capture_id
+                            and prior.get("status") == "ok" and prior.get("input_key") == key):
+                        record("interpretations", prior)
+                        prior_id = path.stem
+                        break
             paths = [ROOT / "interpretations" / (prior_id + ".json")] if prior_id else []
         else:
             paths = (ROOT / "interpretations").glob("*.json")
         for path in paths:
             prior = json.loads(path.read_text(encoding="utf-8"))
-            if prior["status"] == "ok" and prior.get("input_key") == result["input_key"]:
+            if (prior["status"] == "ok" and prior.get("input_key") == key
+                    and (required_result is None or prior["id"] == required_result)):
                 return interpretation_summary(prior, capture_id, json.loads(prior["content"])["items"], True)
+    if required_result is not None:
+        raise ValueError("The accepted interpretation is unavailable for this exact input")
     items = []
     started = time.monotonic()
     try:
@@ -212,6 +240,11 @@ async def interpret(capture_id: str, fresh: bool = False) -> dict:
         raise
     except Exception as exc:
         result.update(status="interpretation_failed", error=f"{type(exc).__name__}: {exc}")
+        if isinstance(exc, httpx.TransportError) or (
+            isinstance(exc, httpx.HTTPStatusError)
+            and (exc.response.status_code >= 500 or exc.response.status_code in (401, 403, 404, 408, 429))
+        ) or ("finish_reason" not in result and isinstance(exc, (KeyError, IndexError, json.JSONDecodeError))):
+            result["service_failure"] = True
     finally:
         result.update(observed_at=now(), seconds=round(time.monotonic() - started, 2))
         save("interpretations", result)

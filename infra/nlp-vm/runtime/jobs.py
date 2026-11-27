@@ -261,7 +261,7 @@ def interpretation(captures=None, limit=None, scope="bounded"):
     )
 
 
-def execute(target, p):
+def execute(target, p, *, recover_orphan=False):
     typ = target["type"]
     more = []
     if typ == "horse":
@@ -317,9 +317,13 @@ def execute(target, p):
             more.append({**target, "offset": b["next_offset"]})
     elif typ == "interpret":
         # Shared with the native Cron invocation. Separate processes cannot claim this GPU slot at once.
+        options = {}
+        if p["scope"] == "saved_versions":
+            options = dict(expected_version=target["version"], required_result=target.get("reuse_id"),
+                           configuration=p["input"]["configuration"], recover_orphan=recover_orphan)
         with (ROOT / "local-model.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            outcome = asyncio.run(interpret(target["capture"]))
+            outcome = asyncio.run(interpret(target["capture"], **options))
         return {
             "route_status": outcome["status"],
             "failed": int(outcome["status"] != "ok"),
@@ -327,6 +331,7 @@ def execute(target, p):
             "interpreted": int(outcome["status"] == "ok" and not outcome.get("reused")),
             "interpretation": outcome.get("interpretation_id"),
             "error": outcome.get("error"),
+            "service_failure": outcome.get("service_failure", False),
         }, []
     elif typ == "calendar":
         listing = discovery.calendar(date.fromisoformat(target["day"]))
@@ -374,6 +379,8 @@ def execute(target, p):
 def add_targets(c, p, targets):
     if not targets:
         return
+    if p["scope"] == "saved_versions":
+        raise ValueError("Cannot append to a frozen version list")
     ident = p["id"]
     c.execute("SELECT id FROM plans WHERE id=%s FOR UPDATE", (ident,))
     pos = c.execute(
@@ -410,10 +417,12 @@ def request_stop(ident):
 
 
 @contextmanager
-def plan_actor(kind):
+def plan_actor(plan):
     before = os.environ.get("KEIBA_RESEARCH_ACTOR")
-    if kind == "coverage":
+    if plan["kind"] == "coverage":
         os.environ["KEIBA_RESEARCH_ACTOR"] = "server-survey"
+    elif plan["scope"] == "saved_versions":
+        os.environ["KEIBA_RESEARCH_ACTOR"] = "saved-articles/" + str(plan["id"])
     try:
         yield
     finally:
@@ -438,6 +447,8 @@ def retry_failed(ident):
         p = c.execute("SELECT * FROM plans WHERE id=%s", (ident,)).fetchone()
         if not p or p["state"] not in TERMINAL:
             raise ValueError("choose a finished plan")
+        if p["scope"] == "saved_versions":
+            raise ValueError("Keep the fixed version inventory and its outcomes in the original plan")
         targets = [
             r["target"]
             for r in c.execute(
@@ -470,12 +481,17 @@ def run(ident, steps=None, respect_stop=False):
         p = c.execute("SELECT * FROM plans WHERE id=%s", (ident,)).fetchone()
         if not p:
             raise ValueError("unknown plan")
-        if p["state"] in TERMINAL or (respect_stop and p["stop_requested"]):
+        fixed = p["scope"] == "saved_versions"
+        respect_stop = respect_stop or fixed
+        if p["state"] in TERMINAL:
             return status(ident)
-        c.execute(
-            "UPDATE plans SET state='running',started_at=coalesce(started_at,now()),ended_at=NULL,stop_requested=false,updated_at=now() WHERE id=%s",
-            (ident,),
+        started = c.execute(
+            """UPDATE plans SET state='running',started_at=coalesce(started_at,now()),ended_at=NULL,
+               stop_requested=false,updated_at=now() WHERE id=%s AND (NOT %s OR NOT stop_requested)""",
+            (ident, respect_stop),
         )
+        if not started.rowcount:
+            return status(ident)
         n = 0
         while True:
             stop = c.execute(
@@ -534,8 +550,9 @@ def run(ident, steps=None, respect_stop=False):
             )
             c.execute("UPDATE plans SET updated_at=now() WHERE id=%s", (ident,))
             try:
-                with plan_actor(p["kind"]):
-                    result, more = execute(item["target"], p)
+                with plan_actor(p):
+                    interrupted = item["state"] == "working" or bool((item["result"] or {}).get("service_failure"))
+                    result, more = execute(item["target"], p, recover_orphan=fixed and interrupted)
                 bad = result.get("route_status") not in (
                     "ok",
                     "partial",
@@ -555,10 +572,19 @@ def run(ident, steps=None, respect_stop=False):
                 )
             except Exception as e:
                 result, more, state = (
-                    {"error": f"{type(e).__name__}: {e}"[:550], "failed": 1},
+                    {"error": f"{type(e).__name__}: {e}"[:550], "failed": 1, "service_failure": fixed},
                     [],
                     "failed",
                 )
+            pause = fixed and result.get("service_failure", False)
+            if fixed:
+                attempts = list((item["result"] or {}).get("attempts", []))
+                generated = result.get("interpretation")
+                if generated and not result.get("reused") and generated not in attempts:
+                    attempts.append(generated)
+                result["attempts"] = attempts
+                if pause:
+                    state = "queued" if len(attempts) < 2 else "failed"
             with c.transaction():
                 add_targets(c, p, more)
                 c.execute(
@@ -569,6 +595,13 @@ def run(ident, steps=None, respect_stop=False):
                     "UPDATE plans SET updated_at=now(),error=CASE WHEN %s='failed' THEN %s ELSE error END WHERE id=%s",
                     (state, result.get("error") or result.get("route_status"), ident),
                 )
+                if pause:
+                    c.execute(
+                        "UPDATE plans SET state='paused',stop_requested=true,error=%s WHERE id=%s",
+                        (result["error"], ident),
+                    )
+            if pause:
+                break
             n += 1
     return status(ident)
 

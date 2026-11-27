@@ -45,6 +45,7 @@ ST = {
     "bounded": "有限の指定範囲",
     "operation": "通常範囲",
     "finite": "指定した収集分",
+    "saved_versions": "固定した保存本文版",
     "server-survey": "サーバ標本調査",
     "net": "netkeiba",
     "blog": "山口吉野",
@@ -494,6 +495,9 @@ def trial_links(c):
             else "開始待ち"
         )
         cards += panel(pattern(kind), body)
+    saved = c.execute("SELECT id,label FROM plans WHERE scope='saved_versions' ORDER BY created_at DESC LIMIT 1").fetchone()
+    if saved:
+        cards += panel("保存済み記事の解釈", anchor("/run/" + str(saved["id"]), saved["label"] + "の進捗"))
     return '<div class="blocks">' + cards + "</div>"
 
 
@@ -1178,6 +1182,29 @@ def legacy(c, ident=None):
     )
 
 
+def saved_progress(c, ident):
+    actor = "saved-articles/" + str(ident)
+    return c.execute(
+        """WITH work AS (
+               SELECT state,updated_at,target->>'version' version,target->>'capture' capture,
+                      target->>'reuse_id' accepted FROM work_items WHERE plan_id=%s
+           ), successful AS (
+               SELECT DISTINCT ON (w.version) w.version,i.id,jsonb_array_length(i.items) n
+               FROM work w JOIN interpretations i ON i.version_id=w.version AND i.capture_id=w.capture
+               WHERE i.status='ok' AND (i.id=w.accepted OR i.evidence->>'actor'=%s)
+               ORDER BY w.version,i.observed_at DESC,i.id
+           )
+           SELECT count(*) total,count(s.id) successful,count(*) FILTER(WHERE s.id=w.accepted) reused,
+             count(*) FILTER(WHERE s.id IS NOT NULL AND w.accepted IS NULL) generated,
+             coalesce(sum(s.n),0) summaries,count(*) FILTER(WHERE s.n=0) empty,
+             count(*) FILTER(WHERE w.state='queued') queued,count(*) FILTER(WHERE w.state='working') working,
+             count(*) FILTER(WHERE w.state='failed') failed,
+             max(w.updated_at) FILTER(WHERE w.state IN ('done','partial','failed')) last_finished,
+             (SELECT count(*) FROM interpretations i WHERE i.evidence->>'actor'=%s) attempts
+           FROM work w LEFT JOIN successful s ON s.version=w.version""", (ident, actor, actor),
+    ).fetchone()
+
+
 def run_detail(c, ident, q):
     p = c.execute("SELECT * FROM plans WHERE id=%s", (ident,)).fetchone()
     if not p:
@@ -1207,11 +1234,30 @@ def run_detail(c, ident, q):
     )
     if p["kind"] in ("history", "daily"):
         h = source_summary(c, ident, p["kind"]) + h
+    fixed = p["scope"] == "saved_versions"
+    if fixed:
+        s = saved_progress(c, ident)
+        h += panel("今回の固定対象", rows([
+            ("対象版数", f"{s['total']:,}"),
+            ("保存済み成功版", f"{s['successful']:,}（既存再利用 {s['reused']:,} ／ 新規成功 {s['generated']:,}）"),
+            ("要約", f"{s['summaries']:,}件 ／ 要約0件の成功 {s['empty']:,}版"),
+            ("作業状態", f"待機 {s['queued']:,} ／ 処理中 {s['working']:,} ／ 失敗 {s['failed']:,}"),
+            ("今回のモデル要求記録", f"{s['attempts']:,}回"),
+            ("直近の作業完了 JST", stamp(s["last_finished"])),
+        ]))
+        if p["state"] == "paused" and p.get("error"):
+            h += panel("停止時の記録", ESC(p["error"]))
     result = []
     for it in items:
         t = it["target"]
         r = it["result"] or {}
         hits = r.get("hits", [])
+        if fixed:
+            result.append((it["position"] + 1, anchor("/article/" + t["capture"], t["capture"]),
+                           ESC(label(it["state"])), ESC(r.get("error") or
+                           ("既存結果を再利用" if t.get("reuse_id") and it["state"] == "done" else
+                            "解釈を保存" if it["state"] == "done" else "—"))))
+            continue
         result.append(
             (
                 it["position"] + 1,
@@ -1233,6 +1279,7 @@ def run_detail(c, ident, q):
             )
         )
     h += table(
+        ["位置", "保存記事", "状態", "結果"] if fixed else
         ["位置", "対象", "経路", "状態", "結果", "新規 / 既知 / 失敗", "取得記録"],
         result,
     )
