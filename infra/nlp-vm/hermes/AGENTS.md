@@ -2,6 +2,12 @@
 
 ## Latest user instruction — 2026-11-27
 
+The current task is a bounded comparison of revised summary skills on saved trial articles. ChatGPT may revise agreed Markdown/skills; Codex performs implementation, deployment, database changes and actual model validation under the written instruction. Loading this contract does not start a job. Use the explicit saved capture IDs supplied for this comparison; do not start collection or the whole interpretation backlog.
+
+Use one summary per independently covered horse in each article. A comparison opponent, training partner or horse mentioned only in historical background does not need a separate summary. A multi-horse training or post-race comments article needs a summary for each independently covered horse, not one representative horse. Link each summary to its main subject race. Past-race background in an upcoming-race preview stays in that preview's text and remains pre; a next-race hope in a post-race account does not change its main race from post. The practical roughly-nine-out-of-ten policy remains.
+
+For this comparison, the user permits discarding existing generated trial interpretations. Codex first retains only the small old-output/timing baseline needed for comparison outside normal import/read paths, then removes old interpretation rows and corresponding generated files consistently. Preserve source articles, versions, captures, collection history and stopped plan progress. This permission does not authorize erasing source data, resetting all queues, or starting full reprocessing.
+
 Production must contain no research or trial data. Preserve the existing new and legacy trial corpus outside production, clean the production data and pending work, and separate test DB credentials, persistent files, Hermes profiles and schedules. A review flag or a display filter is not storage isolation. The administrator performs cleanup; do not execute cleanup merely from loading this contract.
 
 Use the same code, skills, model and execution path in the isolated test environment. Verify collection, independent interpretation and Dashboard display there. Production collection and continuous interpretation remain stopped until the user explicitly instructs the switch/start. Passing a test does not import test data into production or activate production Cron.
@@ -44,9 +50,9 @@ Coverage research has ended. Report actual capture, interpretation and display o
 
 ## Capture and interpretation
 
-Use the approved capture path to save permitted retrieved text directly through code. Keep source text distinct from generated interpretation. Do not make verbatim copying or manual character-offset calculation the model's job. Interpret horses, races and pre/post context flexibly, keeping uncertainty where needed. Use normal normalized-name matching and known date/venue/race-number keys, while allowing unresolved references.
+Use the approved capture path to save permitted retrieved text directly through code. Keep source text distinct from generated interpretation. Do not make verbatim copying or manual character-offset calculation the model's job. Summarize each independently covered horse once, preserving reasons, speaker distinctions and past-race context in natural language. Do not require a separate item for every statement, horse mention, race mention or time period. Use normal normalized-name matching and available keys for the main subject race; allow unresolved references.
 
-Pass available displayed publication/update labels alongside the captured body as context for independent interpretation. Keep article dates distinct from observation time and allow unknowns. A seed horse or race is a search clue, not proof that the article discusses it. Reuse results only when the relevant input and interpretation configuration match.
+Pass available displayed publication/update labels alongside the captured body as context for independent interpretation. Keep article dates distinct from observation time and allow unknowns. A seed horse or race is a search clue, not proof that the article discusses it. Usually reuse an identical successful input. For a timing comparison, verify that both old and new requests actually generated a response rather than reporting cached results as generation time. A Skill change alone must not request automatic reprocessing of every successful article.
 
 Mechanical ID generation, saved-result reuse and progress records support the research. Record interrupted or failed processing without blocking collection of other material. Pass saved article references, useful findings and remaining directions to the next child or parent.
 
@@ -59,3 +65,4 @@ VM15では以前の研究・試験を復元検証済みの退避先に保全し�
 
 
 VM15 reads the mounted database identity for every collection tool, legacy tool and interpretation. Use the planned scope in the active profile. A search decision and any reused article belong to its originating plan. A one-off in the trial profile uses the ordinary daily scope on the fixed JST date. Keep trial sessions, Cron, raw files and learned skills in that profile.
+

@@ -4,10 +4,11 @@
 
 ## 現在の作業
 
-**2026-11-27の最新指示に基づき、馬別の解釈一覧と「1記事・1頭につき一つの要約」へのSkill修正を実装しました。今回の変更はリポジトリ側の実装で、VM15への反映とLocal LLMでの時間比較は未実施です。** 本番と検証の分離、運用開始待ち、カバー率調査の終了は維持します。
+**2026-11-27の最新指示に基づき、3つのSkillと作業規約を改訂し、Codex向けの解釈時間・馬別要約の検証指示書を作成しました。** 今回はMarkdownの改訂で、実機配備・DB整理・Local LLMでの比較はCodexが指示書に基づいて行います。本番と検証の分離、運用開始待ち、カバー率調査の終了は維持します。
 
-- [最新の指示書：馬別の解釈一覧と要約単位の修正](docs/instructions/2026-11/2026-11-27_nlp_horse_summary_instruction.md)
-- [実装レポート：変更点・検証・実機の残作業](docs/reports/2026-11/2026-11-27_nlp_horse_summary_implementation_report.md)
+- [最新のCodex指示書：改訂Skillの配備・馬別要約・解釈時間の比較検証](docs/instructions/2026-11/2026-11-27_nlp_summary_skills_validation_instruction.md)
+- [前回の実装レポート：馬別一覧・実機未配備](docs/reports/2026-11/2026-11-27_nlp_horse_summary_implementation_report.md)
+- [前回の指示書：馬別一覧と要約単位の修正（履歴）](docs/instructions/2026-11/2026-11-27_nlp_horse_summary_instruction.md)
 - [先行する指示書：2パターン試行とDashboard仕様検討](docs/instructions/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_instruction.md)
 - [先行する指示書：本番清掃・検証領域分離・私的利用方針](docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)
 
@@ -18,12 +19,13 @@
 | 本番DB・永続領域 | 研究・試験データを除去。本文・解釈・試験計画・再開情報を検証側へ分離 |
 | 検証環境 | 空のテスト資料庫へ過去名簿の一部と通常日次1回分を実行。同じコード・Skill・モデル・MCPで原文・解釈・表示まで確認 |
 | Dashboard | `/horses` に馬名検索・対象馬の解釈本文・出典・原文へのリンクを実装。既存の分割解釈は1記事・1頭のカード内に保存時の文章で表示。VM15への配備は未実施 |
-| 記事解釈 | 新Skillは同じ馬の複数競走・話者・時点を一つの要約へまとめる。Skill変更による成功済み全件の自動再処理を防止。モデル設定は維持 |
+| 記事解釈 | 1記事・独立した説明対象の馬ごとに1要約。比較相手への言及は対象馬の文章に含め、コメント集の各馬は残す。競走は記事の主題一つ |
+| 今回の比較 | 保存記事6件前後を旧新Skill・同じモデル設定で実生成。既存解釈は比較に必要な最小限を控えてから破棄可能。原文を保ち、全2,438版の処理は再開しない |
 | 本番の収集・解釈 | 初期全名簿・毎朝Cron・常駐解釈は停止。検証後の切替・開始は別途指示 |
 | カバー率 | 調査終了。再測定を受入条件にしない |
 | 利用目的 | 現在の私的複製・閲覧・整理を基準に内部保存制限を修正 |
 
-分類・収集は9割がた役立てば十分という方針を維持します。初期データのLocal LLM解釈に数日〜1週間程度かかっても構いません。収集・解釈・閲覧はサーバだけで完結させ、日常的でない保守はCodexへの依頼とCLIで行います。
+分類・収集は9割がた役立てば十分という方針を維持します。初期データのLocal LLM解釈に数日〜1週間程度かかっても構いません。SkillなどのMarkdownはChatGPTが合意範囲で改訂でき、実装・実機操作はCodexが指示書に基づいて行います。収集・解釈・閲覧はサーバだけで完結させ、日常的でない保守はCodexへの依頼とCLIで行います。
 
 - Skill：[検索](skills/keiba-search/SKILL.md)・[記事解釈](skills/keiba-interpret/SKILL.md)・[統括](skills/keiba-coordinate/SKILL.md)。
 - 現行配置の説明：[VM15運用手順](infra/nlp-vm/runtime/README.md)。本番と検証の保存先・閲覧先を記載しています。
