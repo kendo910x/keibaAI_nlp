@@ -4,37 +4,41 @@
 
 ## 現在の作業
 
-11月27日16:02 JST、VM15で保存済みの検証記事2,438版の有限解釈を開始しました。採用済み6版は同じ解釈IDで再利用し、2,432版を新規処理の対象にしました。成功した記事は順次、馬名から要約・原文を読めます。[実機の進捗](http://192.168.0.14:8787/run/1534dd4e-dc20-5fa3-8753-2a630bebc7b4) ・ [実施レポートと閲覧例](docs/reports/2026-11/2026-11-27_nlp_saved_articles_interpretation_report.md)
+2026-11-28、方針を**「テスト資料を撤去し、本番で記事原文の収集を先に始める」**へ切り替えました。Codexは必要な修正・配備と小さな確認の後、過去名簿の初期収集と毎朝の日次収集を開始します。記事単位の独立解釈・馬別要約生成は保留し、後日の指示で当週の情報と掲載日の新しい記事から進めます。
 
-VM15に改訂版の3つのSkillと馬別一覧を配備しました。保存記事6件を同じLocal LLMで実生成したところ、解釈時間の合計は旧版の1,827.51秒から新版の218.84秒になりました。検証Dashboardで6記事・24件の新しい馬別要約を読めます。[馬名から要約を読む](http://192.168.0.14:8787/horses)
+**この更新はCodexへの指示書の反映です。実機の停止・撤去・本番開始を完了したという報告ではありません。** 実行後はCodexの実施レポートと本番Dashboardで確認します。
 
-- [最新のCodex指示書：保存済み検証記事の有限解釈・馬別閲覧](docs/instructions/2026-11/2026-11-27_nlp_saved_articles_interpretation_instruction.md)
-- [前回のCodex指示書：改訂Skillの配備・馬別要約・解釈時間の比較検証](docs/instructions/2026-11/2026-11-27_nlp_summary_skills_validation_instruction.md)
-- [完了した6記事の実機検証レポート](docs/reports/2026-11/2026-11-27_nlp_summary_skills_validation_report.md)
-- [馬別一覧の実装レポート](docs/reports/2026-11/2026-11-27_nlp_horse_summary_implementation_report.md)
-- [前回の指示書：馬別一覧と要約単位の修正（履歴）](docs/instructions/2026-11/2026-11-27_nlp_horse_summary_instruction.md)
-- [先行する指示書：2パターン試行とDashboard仕様検討](docs/instructions/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_instruction.md)
-- [先行する指示書：本番清掃・検証領域分離・私的利用方針](docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)
+- [最新のCodex指示書：本番の記事収集・テスト資料撤去・停止再開](docs/instructions/2026-11/2026-11-28_nlp_production_collection_instruction.md)
+- [本番Dashboard](http://192.168.0.14:8786/)：開始後の原文・出典・件数・収集進捗を確認
+- [VM15運用手順](infra/nlp-vm/runtime/README.md)：実行担当が配備に合わせて更新
+- [前の指示書：保存済み検証記事の有限解釈（置換済み）](docs/instructions/2026-11/2026-11-27_nlp_saved_articles_interpretation_instruction.md)
 
-先行する実機作業では、旧研究の1,303 URL・1,304版と旧56記事を私有バックアップへ退避して復元検証し、本番DBを空にしました。別DB・別資格情報・別Hermesで2試行の収集を終え、保存した2,438版を旧解釈計画へ登録しました。この計画は11月27日14:34 JSTに一時停止しました。[検証用資料庫](http://192.168.0.14:8787/) ・ [本番の開始待ち画面](http://192.168.0.14:8786/) ・ [先行する実機レポートと実画面](docs/reports/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_report.md)
-
-| 項目 | 確認した状態 |
+| 今回の対象 | 指示内容 |
 |---|---|
-| 本番DB・永続領域 | 研究・試験データを除去。本文・解釈・試験計画・再開情報を検証側へ分離 |
-| 検証環境 | 空のテスト資料庫へ過去名簿の一部と通常日次1回分を実行。同じコード・Skill・モデル・MCPで原文・解釈・表示まで確認 |
-| Dashboard | 検証用の `/horses` で馬名を検索し、要約から保存原文と出典へ移動できる |
-| 記事解釈 | 1記事・独立した説明対象の馬ごとに1要約。比較相手への言及は対象馬の文章に含め、コメント集の各馬は残す。競走は記事の主題一つ |
-| 完了した比較 | 固定した6記事を旧新各1回実生成して終了。検証DBと解釈JSONには採用した6件を保存。原文2,438版と取得2,445件を保持。旧解釈計画は停止中 |
-| 保存済み記事の有限解釈 | 新しい固定計画を11月27日16:02 JSTに起動。現在の版別成功数・残件・最終完了日時は[検証Dashboardの実行記録](http://192.168.0.14:8787/run/1534dd4e-dc20-5fa3-8753-2a630bebc7b4)に表示 |
-| 本番の収集・解釈 | 初期全名簿・毎朝Cron・常駐解釈は停止。検証後の切替・開始は別途指示 |
-| カバー率 | 調査終了。再測定を受入条件にしない |
-| 利用目的 | 現在の私的複製・閲覧・整理を基準に内部保存制限を修正 |
+| 試験資料 | 既存の試験本文・解釈・計画・キュー・再開状態を撤去。2,438版の全件解釈を待たない |
+| 本番データ | 試験データを移さず、空の保存先で新規取得を開始 |
+| 過去記事 | v3由来の約54,591頭の名簿を使い、候補と次ページを保持して一巡 |
+| 日次記事 | 初期収集中も新着を保存。初期時刻は毎朝06:40 JST |
+| 停止・再開 | 過去だけ／日次を含む全収集をCLIで操作。手動停止は再起動後も維持 |
+| LLM | 検索・統括の判断に利用。記事の独立解釈は起動しない |
+| Dashboard | 本番の原文検索・詳細・媒体別件数・進捗。「解釈は保留」を明示 |
+| カバー率 | 調査終了。開始条件として復活させない |
 
-分類・収集は9割がた役立てば十分という方針を維持します。初期データのLocal LLM解釈に数日〜1週間程度かかっても構いません。SkillなどのMarkdownはChatGPTが合意範囲で改訂でき、実装・実機操作はCodexが指示書に基づいて行います。収集・解釈・閲覧はサーバだけで完結させ、日常的でない保守はCodexへの依頼とCLIで行います。
+分類・収集は9割がた役立てば十分という方針を維持します。日時や対象の曖昧さを理由に保存を止めず、複数媒体の一覧・特集・サイト内検索と馬名を組み合わせます。1回の取得件数を、馬ごとの記事総数の上限にしません。解釈対象の精密な選別や全件検査を収集の前提にしません。
 
-- Skill：[検索](skills/keiba-search/SKILL.md)・[記事解釈](skills/keiba-interpret/SKILL.md)・[統括](skills/keiba-coordinate/SKILL.md)。
-- 現行配置の説明：[VM15運用手順](infra/nlp-vm/runtime/README.md)。本番と検証の保存先・閲覧先を記載しています。
-- 過去の[カバー率報告](docs/reports/2026-11/2026-11-27_nlp_coverage_report.md)と[段階3C引き継ぎ](docs/handoffs/2026-11/2026-11-26_stage3c_redesign_handover.md)は履歴として残します。
+SkillなどのMarkdownはChatGPTが合意範囲で改訂し、実装・実機操作はCodexが指示書に基づいて行います。日常の収集はサーバで完結し、設定変更などはCodexへの依頼とCLIで行います。
+
+## 直前までの成果と履歴
+
+改訂Skillの6記事比較では、解釈時間の合計が旧版1,827.51秒から新版218.84秒に短縮しました。1記事・独立して説明されている馬ごとに1要約とする方針と、馬別画面の実装は引き継ぎます。試験の本文・解釈そのものは本番へ移しません。
+
+- [6記事の比較検証レポート](docs/reports/2026-11/2026-11-27_nlp_summary_skills_validation_report.md)
+- [馬別一覧の実装レポート](docs/reports/2026-11/2026-11-27_nlp_horse_summary_implementation_report.md)
+- [2パターン収集試行のレポート](docs/reports/2026-11/2026-11-27_nlp_two_pattern_dashboard_trial_report.md)
+- [検証用2,438版の有限解釈の開始報告](docs/reports/2026-11/2026-11-27_nlp_saved_articles_interpretation_report.md)：11月27日の記録。今回の停止・撤去前のもの
+- [本番清掃・検証領域分離の指示書](docs/instructions/2026-11/2026-11-27_nlp_production_cleanup_test_isolation_instruction.md)：保存先分離と私的利用方針を継承
+- Skill：[検索](skills/keiba-search/SKILL.md)・[記事解釈](skills/keiba-interpret/SKILL.md)・[統括](skills/keiba-coordinate/SKILL.md)。今回の収集専用状態への配備はCodexが行います。
+- [過去のカバー率報告](docs/reports/2026-11/2026-11-27_nlp_coverage_report.md)・[段階3C引き継ぎ](docs/handoffs/2026-11/2026-11-26_stage3c_redesign_handover.md)
 
 ## PoC: 日本語Embedding実行環境（CPU）
 
