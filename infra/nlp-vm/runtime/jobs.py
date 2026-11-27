@@ -228,7 +228,9 @@ def daily(
 
 def pending_captures(limit, cooldown=False):
     # Pick the first capture bearing the most recent nonempty publication label for each version.
-    # An unchanged repeat fetch leaves the input stable. A date correction or Skill change reopens it.
+    # A date correction can reopen the input; a Skill/settings change alone must not
+    # schedule the entire successful corpus again. Explicit capture IDs still use
+    # the current Skill/settings when an operator requests a bounded reinterpretation.
     skill, settings = interpretation_config()
     with connect() as c:
         rs = c.execute(
@@ -238,10 +240,11 @@ def pending_captures(limit, cooldown=False):
             JOIN LATERAL (SELECT id FROM captures WHERE version_id=v.id
               AND (evidence->>'published_label') IS NOT DISTINCT FROM latest.d ORDER BY observed_at,id LIMIT 1) cap ON true
             WHERE NOT EXISTS(SELECT FROM interpretations i WHERE i.capture_id=cap.id AND i.input_key IS NOT NULL
-              AND i.skill_hash=%s AND i.evidence->'settings'=%s AND i.evidence->>'input_format'='article-date-v1'
-              AND (i.status='ok' OR (%s AND i.observed_at>now()-interval '1 day')))
+              AND i.evidence->>'input_format'='article-date-v1'
+              AND (i.status='ok' OR (%s AND i.skill_hash=%s AND i.evidence->'settings'=%s
+                AND i.observed_at>now()-interval '1 day')))
             ORDER BY v.observed_at DESC,v.id LIMIT %s""",
-            (digest(skill), Jsonb(settings), cooldown, limit),
+            (cooldown, digest(skill), Jsonb(settings), limit),
         ).fetchall()
     return [r["id"] for r in rs]
 
@@ -629,3 +632,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

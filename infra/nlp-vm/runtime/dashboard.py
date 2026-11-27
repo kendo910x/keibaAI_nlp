@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 from corpus import connect
+from horse_view import horse_key, render_horse_card
 from profile_db import PROFILES, database, trial
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -157,6 +158,7 @@ def layout(tab, title, body):
         + "</a>"
         for key, href, name in (
             ("status", "/", "稼働状況"),
+            ("horses", "/horses", "馬別の解釈"),
             ("articles", "/articles", "記事を探す"),
             ("runs", "/runs", "実行履歴"),
         )
@@ -313,6 +315,7 @@ def home(c):
         )
         + "</span></p>"
         + (trial_links(c) if trial() else "")
+        + horse_search_form()
         + "<h2>"
         + ("今回のテストDB全体" if trial() else "本番DB全体")
         + "</h2>"
@@ -551,6 +554,168 @@ def source_summary(c, ident, kind):
     )
 
 
+def horse_search_form(q=None, hosts=None):
+    q = q or {}
+    form = (
+        '<form class="filters horse-search" method="get" action="/horses">'
+        '<label class="grow">馬別の解釈を探す<input type="search" name="q" value="'
+        + ESC(q.get("q", ""))
+        + '" placeholder="馬名を入力"></label>'
+    )
+    if q.get("plan"):
+        form += '<input type="hidden" name="plan" value="' + ESC(q["plan"]) + '">'
+    if hosts is not None:
+        form += (
+            '<label>馬名の一致<select name="match">'
+            + opts([("", "一部が一致"), ("exact", "この馬だけ")], q.get("match", ""))
+            + '</select></label><label>掲載ホスト<select name="site">'
+            + opts([("", "すべて")] + [(r["host"], site(r["host"])) for r in hosts], q.get("site", ""))
+            + "</select></label>"
+        )
+        for key, title in (("from", "掲載日から"), ("to", "掲載日まで")):
+            form += (
+                "<label>"
+                + title
+                + '<input type="date" name="'
+                + key
+                + '" value="'
+                + ESC(q.get(key, ""))
+                + '"></label>'
+            )
+    return form + "<button>解釈を検索</button></form>"
+
+
+def horse_query(q):
+    """Select the displayed version and successful result before matching horses.
+
+    Plan scope is applied to captures first: its latest capture per URL chooses
+    the version. Publication filters and horse matching never select an older
+    version or an older successful interpretation in place of that result.
+    """
+    params = []
+    scope = ""
+    if q.get("plan"):
+        if not re.fullmatch(UUID, q["plan"]):
+            raise ValueError("実行IDを確認してください")
+        scope = " AND EXISTS(SELECT FROM plan_hits h WHERE h.plan_id=%s AND h.capture_id=cap.id)"
+        params.append(q["plan"])
+    conditions = []
+    if q.get("site"):
+        conditions.append("a.host=%s")
+        params.append(q["site"])
+    for key, op in (("from", ">="), ("to", "<=")):
+        if q.get(key):
+            try:
+                day = datetime.strptime(q[key], "%Y-%m-%d").date()
+            except ValueError:
+                raise ValueError("期間には有効な日付を指定してください。")
+            conditions.append("a.article_day" + op + "%s")
+            params.append(day)
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    term = horse_key(q.get("q", "")[:250])
+    match = "horse_key<>''"
+    if term:
+        match += " AND " + ("horse_key=%s" if q.get("match") == "exact" else "strpos(horse_key,%s)>0")
+        params.append(term)
+    sql = """WITH selected_versions AS (
+        SELECT DISTINCT ON (v.url_key)
+            v.id version_id,v.url_key,v.host,coalesce(nullif(v.title,''),cap.title) title,
+            v.source_url,v.article_day,v.date_label,v.partial,cap.observed_at,cap.id capture_id
+        FROM versions v JOIN LATERAL (
+            SELECT cap.id,cap.title,cap.observed_at FROM captures cap
+            WHERE cap.version_id=v.id""" + scope + """
+            ORDER BY cap.observed_at DESC,cap.id DESC LIMIT 1
+        ) cap ON true
+        ORDER BY v.url_key,cap.observed_at DESC,cap.id DESC,v.id DESC
+    ), selected_interpretations AS (
+        SELECT a.*,i.id interpretation_id,i.items,i.observed_at interpretation_at
+        FROM selected_versions a LEFT JOIN LATERAL (
+            SELECT id,items,observed_at FROM interpretations
+            WHERE version_id=a.version_id AND status='ok'
+            ORDER BY observed_at DESC,id DESC LIMIT 1
+        ) i ON true""" + where + """
+    ), horse_parts AS (
+        SELECT a.version_id,p.item,p.ordinality,btrim(p.item->>'horse') horse,
+            regexp_replace(lower(normalize(p.item->>'horse',NFKC)), '[[:space:]]+', '', 'g') horse_key
+        FROM selected_interpretations a CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(a.items)='array' THEN a.items ELSE '[]'::jsonb END
+        ) WITH ORDINALITY AS p(item,ordinality)
+        WHERE jsonb_typeof(p.item->'horse')='string'
+          AND jsonb_typeof(p.item->'text')='string' AND p.item->>'text' ~ '[^[:space:]]'
+    ), horse_cards AS (
+        SELECT version_id,horse_key,min(horse) horse,jsonb_agg(item ORDER BY ordinality) items
+        FROM horse_parts WHERE """ + match + """
+        GROUP BY version_id,horse_key
+    ) """
+    return sql, params
+
+
+def horses(c, q):
+    q = {k: q[k] for k in ("q", "plan", "site", "from", "to", "match", "p") if q.get(k)}
+    q["q"] = q.get("q", "").strip()[:250]
+    plan = q.get("plan", "")
+    base, params = horse_query(q)
+    selected = None
+    if plan:
+        selected = c.execute(
+            "SELECT kind,label FROM plans WHERE id=%s AND kind IN ('history','daily')", (plan,)
+        ).fetchone()
+        if not selected:
+            raise LookupError
+    total = c.execute(base + "SELECT count(*) n FROM horse_cards", params).fetchone()["n"]
+    page = max(1, min(100000, int(q.get("p") or 1)))
+    page = min(page, max(1, (total + 19) // 20))
+    result = c.execute(
+        base + """SELECT a.version_id,a.capture_id,a.host,a.title,a.source_url,a.article_day,
+            a.date_label,a.partial,a.observed_at,a.interpretation_at,g.horse,g.horse_key,g.items
+            FROM horse_cards g JOIN selected_interpretations a USING(version_id)
+            ORDER BY a.article_day DESC NULLS LAST,a.observed_at DESC,a.version_id,g.horse_key
+            LIMIT 20 OFFSET %s""", [*params, (page - 1) * 20]
+    ).fetchall()
+    candidates = (
+        c.execute(
+            base + """SELECT horse_key,min(horse) horse,count(*) n FROM horse_cards
+                GROUP BY horse_key ORDER BY n DESC,horse_key LIMIT 20""", params
+        ).fetchall()
+        if q["q"] and q.get("match") != "exact" else []
+    )
+    hosts = c.execute("SELECT DISTINCT host FROM versions ORDER BY host").fetchall()
+    article_filters = {k: q[k] for k in ("plan", "site", "from", "to") if q.get(k)}
+    h = (
+        ("<p>" + anchor("/run/" + plan, "← " + selected["label"] + " の実行記録") + "</p>" if selected else "")
+        + '<p class="lead">馬名から、保存済みのLLM解釈を読めます。同じ記事の同じ馬は1件にまとめ、原文も開けます。</p>'
+        + horse_search_form(q, hosts)
+    )
+    if candidates:
+        h += '<div class="horse-candidates"><span>この馬に絞る</span> '
+        h += " ".join(
+            anchor(linkto("/horses", {**article_filters, "q": r["horse"], "match": "exact"}), r["horse"] + "（" + str(r["n"]) + "件）")
+            for r in candidates
+        )
+        h += "</div>"
+    h += '<h2>馬別の解釈　' + f"{total:,}" + ' 件</h2><p class="meta">1件＝1記事・1頭。掲載日が新しい順に表示します。</p>'
+    if not total:
+        h += '<section class="notice"><p>該当する保存済みの馬別解釈はまだありません。</p><p>記事がないとは限りません。解釈前の記事や、本文には馬名があっても解釈では取り上げられていない記事も、元記事の検索から確認できます。</p></section>'
+    back = linkto("/horses", {**q, "p": page})
+    for r in result:
+        h += render_horse_card(
+            {**r, "publisher": site(r["host"])},
+            back,
+            linkto("/horses", {**article_filters, "q": r["horse"], "match": "exact"}),
+        )
+    h += '<div class="pager">'
+    if page > 1:
+        h += anchor(linkto("/horses", {**q, "p": page - 1}), "← 前の20件")
+    h += f"<small>{page} / {max(1, (total + 19) // 20)} ページ</small>"
+    if page * 20 < total:
+        h += anchor(linkto("/horses", {**q, "p": page + 1}), "次の20件 →")
+    h += '</div><section class="panel"><h2>元記事も確認する</h2><p>'
+    h += anchor(linkto("/articles", {**article_filters, "q": q["q"]}), "この馬名で元記事を検索" if q["q"] else "元記事の一覧を開く")
+    h += "　" + anchor(linkto("/articles", {**article_filters, "stage": "no"}), "この範囲の未解釈記事を見る")
+    h += '</p><p class="meta">ここでは解釈に記録された馬名を検索しています。未解釈記事は馬名で絞らず一覧できます。</p></section>'
+    return layout("horses", "馬別の解釈", h)
+
+
 def archive(c, q):
     conditions = []
     params = []
@@ -670,6 +835,7 @@ def archive(c, q):
             [
                 ("", "すべて"),
                 ("yes", "解釈済み"),
+                ("no", "成功した解釈なし"),
                 ("queued", "解釈待ち"),
                 ("working", "処理中"),
                 ("failed", "失敗"),
@@ -711,6 +877,15 @@ def archive(c, q):
             else ""
         )
         + form
+        + (
+            '<p class="notice">馬についての解釈を読むなら　'
+            + anchor(
+                linkto("/horses", {k: q[k] for k in ("q", "plan", "site", "from", "to") if q.get(k)}),
+                "「" + term + "」を馬別の解釈で検索 →",
+            )
+            + "</p>"
+            if term else ""
+        )
         + f'<h2>検索結果　{total:,} URL</h2><ul class="articles">'
     )
     for r in result:
@@ -797,7 +972,7 @@ def archive(c, q):
 
 def detail(c, ident, back="/articles"):
     parsed = urlsplit(back)
-    if parsed.scheme or parsed.netloc or parsed.path != "/articles":
+    if parsed.scheme or parsed.netloc or parsed.path not in ("/articles", "/horses"):
         back = "/articles"
     cap = c.execute("SELECT * FROM captures WHERE id=%s", (ident,)).fetchone()
     if not cap:
@@ -815,7 +990,7 @@ def detail(c, ident, back="/articles"):
     ).fetchall()
     h = (
         "<p>"
-        + anchor(back, "← 記事一覧")
+        + anchor(back, "← 馬別の解釈" if urlsplit(back).path == "/horses" else "← 記事一覧")
         + "".join(
             "　"
             + anchor(linkto("/articles", {"plan": str(m["id"])}), pattern(m["kind"]))
@@ -1090,6 +1265,8 @@ class Handler(BaseHTTPRequestHandler):
                 with connect(reader=True) as c:
                     if u.path == "/":
                         out = home(c)
+                    elif u.path == "/horses":
+                        out = horses(c, q)
                     elif u.path == "/articles":
                         out = archive(c, q)
                     elif u.path == "/runs":
@@ -1139,3 +1316,4 @@ if __name__ == "__main__":
     ThreadingHTTPServer(
         ("192.168.0.14", PROFILES[database()][2]), Handler
     ).serve_forever()
+
