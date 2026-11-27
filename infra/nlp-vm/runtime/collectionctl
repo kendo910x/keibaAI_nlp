@@ -36,7 +36,7 @@ case "$action" in
  resume-all)
     ops resume-all
     call hermes cron resume "$(cron_id)"
-    call /opt/nlp-db/venv/bin/python -B /opt/keiba/jobs.py daily
+    ops due-daily
     systemctl enable --now nlp-hermes-tick.timer
     systemctl start --no-block "nlp-plan@$(history_id).service" nlp-daily-raw.service
     ;;
