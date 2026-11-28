@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,26 +52,35 @@ class RawRouteTests(unittest.TestCase):
         )
         self.assertEqual(result["route_status"], "ok")
 
+    @unittest.skipUnless(os.environ.get("KEIBA_RAW_TRIAL_TEST") == "1", "requires isolated PostgreSQL")
     def test_daily_pages_bridge_a_gap_since_the_previous_observation(self):
+        from psycopg.types.json import Jsonb
+        from corpus import connect
+        from profile_db import trial
+
+        self.assertTrue(trial())
         base = "https://www.keibalab.jp/topics/backnumber.html"
         page = BeautifulSoup(
             '<ul class="tabList"><li><a href="/topics/1/">一</a><time>2026-11-08</time></li></ul>'
             '<a rel="next" href="?page=2">次へ</a>', "html.parser"
         )
         with (
+            connect() as connection,
+            connection.transaction(force_rollback=True),
             patch.object(raw_pages, "get_html", return_value=(base, page)),
             patch.object(raw_pages, "save", return_value={"id": "saved-list"}),
-            patch.object(raw_pages, "connect") as db,
+            patch.object(raw_pages, "connect", return_value=nullcontext(connection)),
         ):
-            prior = db.return_value.__enter__.return_value.execute.return_value.fetchone
-            prior.return_value = {"day": "2026-11-01", "items": [{"url": base + "/older"}]}
-            target = dict(type="media", source="lab", day="2026-11-28")
+            target = dict(type="media", source="lab", day="2026-11-28", name="frontier-fixture")
             plan = dict(id="fixture", kind="daily", input={"day": target["day"]})
             _, tasks = raw_pages.page_step(target, plan)
-            self.assertEqual([t["type"] for t in tasks], ["listing", "page"])
-            prior.return_value = None
-            _, tasks = raw_pages.page_step(target, plan)
             self.assertEqual([t["type"] for t in tasks], ["listing"])
+            history = dict(channel="lab/frontier-fixture", head=True, day="2026-11-01",
+                           status="ok", candidates=[{"url": base + "/older"}])
+            connection.execute("INSERT INTO observations(family,id,data) VALUES ('listings',%s,%s)",
+                               ("frontier-fixture", Jsonb(history)))
+            _, tasks = raw_pages.page_step(target, plan)
+            self.assertEqual([t["type"] for t in tasks], ["listing", "page"])
 
     def test_rate_limit_does_not_consume_blocked_article(self):
         items = [

@@ -215,9 +215,9 @@ def page_step(target, plan):
         ]
         with connect() as c:
             prior = c.execute(
-                """SELECT data->'candidates' items, data->>'day' day FROM observations WHERE family='listings'
+                """SELECT data->'candidates' AS items, data->>'day' AS day FROM observations WHERE family='listings'
               AND data->>'channel'=%s AND data->>'head'='true' AND data->>'day'<%s AND data->>'status'='ok'
-              ORDER BY data->>'day' DESC LIMIT 1""",
+              ORDER BY data->>'day' DESC, data->>'observed_at' DESC NULLS LAST, id DESC LIMIT 1""",
                 (channel, data["day"]),
             ).fetchone()
         cutoff = date.fromisoformat(data["day"]) - timedelta(days=8)
