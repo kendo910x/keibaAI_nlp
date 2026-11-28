@@ -122,16 +122,17 @@ def finite(sources):
 def collection_status():
     with connect() as c:
         plans = c.execute(
-            """SELECT id,kind,state,stop_requested,started_at,updated_at,ended_at,error,input FROM plans
+            """SELECT id,kind,scope,state,stop_requested,started_at,updated_at,ended_at,error,input FROM plans
             WHERE id=(SELECT id FROM plans WHERE scope='operation' AND kind='history' ORDER BY created_at DESC LIMIT 1)
                OR id IN (SELECT id FROM plans WHERE scope='operation' AND kind='daily' ORDER BY created_at DESC LIMIT 7)
             ORDER BY kind DESC,created_at DESC"""
         ).fetchall()
         for plan in plans:
+            plan["effective_state"] = raw_control.worker_state(c, plan)
             plan.update(raw_control.progress(c, plan["id"]))
             if plan["kind"] == "history":
                 plan["remaining_horses"] = plan["horses"] - plan["searched"]
-        holds=c.execute("SELECT * FROM route_waits WHERE retry_at>now() ORDER BY retry_at").fetchall()
+        holds = raw_control.active_waits(c)
         return dict(control=raw_control.controls(c),plans=plans,holds=holds)
 
 

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from corpus import connect
 from horse_view import horse_key, render_horse_card
 import raw_control
+from raw_control import has_worker
 from profile_db import PROFILES, database, trial
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -34,6 +35,8 @@ ST = {
     "running": "実行中",
     "paused": "中断・再開可",
     "waiting": "再試行待ち",
+    "daily_priority": "日次収集を優先して待機",
+    "interrupted": "中断・再開可",
     "ok": "接続確認",
     "off": "停止",
     "enabled": "有効",
@@ -225,16 +228,6 @@ def schedules():
     )
 
 
-def has_worker(c, ident):
-    """Session advisory locks disappear on process exit, including an interrupted plan."""
-    return c.execute(
-        """WITH k AS (SELECT hashtextextended(%s,0) h)
-         SELECT EXISTS(SELECT FROM pg_locks,k WHERE locktype='advisory' AND granted AND objsubid=1
-         AND classid=((h>>32)&4294967295)::oid AND objid=(h&4294967295)::oid) active""",
-        (str(ident),),
-    ).fetchone()["active"]
-
-
 def run_rows(c, limit):
     ps = c.execute(
         """SELECT p.*,x.n,x.finished,x.saved,x.known,x.failed,x.interpreted,x.missing,x.reused FROM plans p
@@ -247,8 +240,7 @@ def run_rows(c, limit):
         (limit,),
     ).fetchall()
     for p in ps:
-        if p["state"] == "running" and not has_worker(c, p["id"]):
-            p["state"] = "中断・再開可"
+        p["state"] = raw_control.worker_state(c, p)
     return ps
 
 
@@ -368,7 +360,7 @@ def home(c):
         )
     ]
     for r in health:
-        if r["name"] in ("ticker", "interpreter", "database"):
+        if r["name"] in ("ticker", "interpreter", "database", "collection_progress"):
             continue
         ch.append(
             (
@@ -407,16 +399,21 @@ def home(c):
         )
     h += panel("現在の処理", rows(cp) if cp else "待機中")
     if not trial():
-        flags = raw_control.controls(c)
-        h += panel("原文収集", rows([
-            ("運転状態", "全収集を手動停止" if flags["all_paused"] else
-             "過去収集を手動停止・日次は有効" if flags["history_paused"] else "原文を収集中"),
-            ("記事解釈", "保留・馬別要約の生成は未起動"),
-        ]))
+        state, flags, waits, _ = raw_control.operating_status(c)
+        fields = [("運転状態", state), ("記事解釈", "保留・馬別要約の生成は未起動")]
+        if flags["history_paused"] and not flags["all_paused"]:
+            fields.append(("過去収集", "手動停止"))
+        for wait in waits:
+            scope = "全経路" if wait["source"] == "*" else label(wait["source"])
+            fields.append((scope + "の再試行予定 JST", stamp(wait["retry_at"]) + "　" + ESC(wait["reason"])))
+        probe = byname.get("collection_progress")
+        if probe:
+            fields.append(("直近の毎時監視 JST", stamp(probe["checked_at"]) + "　" + ESC(probe["detail"])))
+        h += panel("原文収集", rows(fields))
         media = c.execute("SELECT host,count(*) n FROM versions GROUP BY host ORDER BY n DESC").fetchall()
         if media:
             h += panel("媒体別の保存本文版",rows([(ESC(site(m["host"])),m["n"]) for m in media]))
-    recent_problems = [r for r in health if r["state"] == "failed"]
+    recent_problems = [r for r in health if r["state"] == "failed" and r["name"] != "collection_progress"]
     if recent_problems:
         h += panel(
             "確認が必要な接続",
@@ -427,7 +424,7 @@ def home(c):
                 ]
             ),
         )
-    interrupted = [p for p in ps if p["state"] == "中断・再開可"]
+    interrupted = [p for p in ps if p["state"] == "interrupted"]
     if interrupted:
         h += panel(
             "処理の中断",
@@ -1221,8 +1218,7 @@ def run_detail(c, ident, q):
     p = c.execute("SELECT * FROM plans WHERE id=%s", (ident,)).fetchone()
     if not p:
         raise LookupError
-    if p["state"] == "running" and not has_worker(c, p["id"]):
-        p["state"] = "中断・再開可"
+    p["state"] = raw_control.worker_state(c, p)
     page = max(1, int(q.get("p") or 1))
     count = c.execute(
         "SELECT count(*) n FROM work_items WHERE plan_id=%s", (ident,)
@@ -1239,7 +1235,7 @@ def run_detail(c, ident, q):
                 ("区分", ESC(label(p["kind"]) + " ／ " + label(p["scope"]))),
                 ("開始 JST", stamp(p["started_at"])),
                 ("終了 JST", stamp(p["ended_at"])),
-                ("最終進捗 JST", stamp(p["updated_at"])),
+                ("計画の最終状態更新 JST", stamp(p["updated_at"])),
                 ("実行ID", ESC(ident)),
             ]
         ),
@@ -1248,7 +1244,7 @@ def run_detail(c, ident, q):
         h = source_summary(c, ident, p["kind"]) + h
         if p["scope"] == "operation":
             progress = raw_control.progress(c,ident)
-            waits = c.execute("SELECT source,reason,retry_at FROM route_waits WHERE retry_at>now() ORDER BY retry_at").fetchall()
+            waits = raw_control.active_waits(c)
             fields = [("未取得の既発見候補",f"{progress['candidates']:,} 件"),
                       ("待機対象 / 失敗単位",f"{progress['held']:,} / {progress['failures']:,}"),
                       ("直近の作業完了 JST",stamp(progress["last_finished"]))]

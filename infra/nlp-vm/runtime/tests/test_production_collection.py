@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import unittest
+from uuid import uuid4
 from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
@@ -134,6 +135,59 @@ class RawRouteTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "保留"):
                 jobs.interpretation(["dummy"])
             client.assert_not_called()
+
+
+@unittest.skipUnless(os.environ.get("KEIBA_RAW_TRIAL_TEST") == "1", "requires isolated PostgreSQL")
+class CollectionMonitoringTests(unittest.TestCase):
+    def test_dashboard_and_hourly_check_use_real_waits_and_completed_work(self):
+        import dashboard
+        import health
+        import raw_control
+        from corpus import connect
+        from profile_db import trial
+
+        self.assertTrue(trial())
+        ident = uuid4()
+        with connect() as c, c.transaction(force_rollback=True):
+            c.execute("UPDATE collection_control SET all_paused=false,history_paused=false WHERE singleton")
+            c.execute("""INSERT INTO plans(id,kind,label,scope,state,started_at,input,owner)
+                VALUES (%s,'daily','monitor fixture','operation','running',now()-interval '2 hours','{}','test')""",
+                (ident,))
+            c.execute("INSERT INTO work_items(plan_id,position,target) VALUES (%s,0,'{}')", (ident,))
+            self.assertEqual(raw_control.operating_status(c)[0], "ワーカー中断・再開待ち")
+            c.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (str(ident),))
+            self.assertEqual(raw_control.operating_status(c)[0], "原文を収集中")
+            c.execute("INSERT INTO route_waits VALUES ('*',now()+interval '5 minutes','fixture failure')")
+            with patch.object(dashboard, "trial", return_value=False):
+                html = BeautifulSoup(dashboard.home(c), "html.parser")
+            field = html.find("dt", string="運転状態")
+            self.assertEqual(field.find_next_sibling("dd").get_text(strip=True), "共通障害で再試行待ち")
+            self.assertIn("fixture failure", html.get_text())
+            health.record_hourly_progress(c)
+            def observation():
+                return c.execute("SELECT state,detail FROM health WHERE name='collection_progress'").fetchone()
+            first = observation()
+            self.assertEqual(first["state"], "failed")
+            self.assertIn("共通障害", first["detail"])
+            c.execute("UPDATE route_waits SET retry_at=now()-interval '1 minute' WHERE source='*'")
+            health.record_hourly_progress(c)
+            self.assertEqual(observation(), first)
+            history = uuid4()
+            c.execute("""INSERT INTO plans(id,kind,label,scope,state,input,owner)
+                VALUES (%s,'history','monitor fixture','operation','waiting','{}','test')""", (history,))
+            c.execute("INSERT INTO work_items(plan_id,position,target) VALUES (%s,0,'{}')", (history,))
+            c.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (str(history),))
+            historical = next(p for p in raw_control.operating_status(c)[3] if p["id"] == history)
+            self.assertEqual(historical["state"], "daily_priority")
+            c.execute("UPDATE health SET checked_at=now()-interval '2 hours' WHERE name='collection_progress'")
+            health.record_hourly_progress(c)
+            self.assertIn("1時間以上未完了", observation()["detail"])
+            c.execute("UPDATE work_items SET state='done',updated_at=now() WHERE plan_id=%s", (ident,))
+            c.execute("UPDATE health SET checked_at=now()-interval '2 hours' WHERE name='collection_progress'")
+            health.record_hourly_progress(c)
+            self.assertEqual(observation()["state"], "ok")
+            c.execute("UPDATE collection_control SET all_paused=true WHERE singleton")
+            self.assertEqual(raw_control.operating_status(c)[0], "全収集を手動停止")
 
 
 @unittest.skipUnless(
